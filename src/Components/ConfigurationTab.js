@@ -59,7 +59,9 @@ const ConfigurationTab = ({ characteristics, configData, parsedConfig }) => {
   };
 
   const handleWriteConfig = async () => {
-    const characteristic = characteristics.ConfigurationCharacteristic;
+    const characteristic =
+      characteristics.configWriteCharacteristic ||
+      characteristics.ConfigurationCharacteristic;
 
     if (!characteristic) {
       showToast('error', 'Error', 'Config write characteristic not available');
@@ -71,15 +73,52 @@ const ConfigurationTab = ({ characteristics, configData, parsedConfig }) => {
       return;
     }
 
+    if (!apn.trim()) {
+      showToast('error', 'Error', 'APN is required');
+      return;
+    }
+
+    if (!serverAddr.trim()) {
+      showToast('error', 'Error', 'Server address is required');
+      return;
+    }
+
+    const port = Number(serverPort);
+    if (isNaN(port) || port <= 0 || port > 65535) {
+      showToast('error', 'Error', 'Valid server port (1-65535) is required');
+      return;
+    }
+
+    const interval = Number(sendIntervalMins);
+    if (isNaN(interval) || interval < 0) {
+      showToast('error', 'Error', 'Valid send interval is required');
+      return;
+    }
+
     const config = new UserConfig();
-    config.frame_head = parsedConfig.frame_head || 0xad55;
-    config.apn = apn;
-    config.server_addr = serverAddr;
-    config.server_port = Number(serverPort) || 0;
-    config.modbus_slave_id = parsedConfig.modbus_slave_id || 0;
-    config.send_interval_mins = Number(sendIntervalMins) || 0;
+    config.frame_head =
+      parsedConfig.frame_head !== undefined ? parsedConfig.frame_head : 0xad55;
+    config.apn = apn.trim();
+    config.server_addr = serverAddr.trim();
+    config.server_port = port;
+    config.modbus_slave_id =
+      parsedConfig.modbus_slave_id !== undefined
+        ? parsedConfig.modbus_slave_id
+        : 0;
+    config.send_interval_mins = interval;
     config.eui64 = parsedConfig.eui64 || new Uint8Array(8);
     config.ble_addr = parsedConfig.ble_addr || new Uint8Array(6);
+
+    console.log('Writing config:', {
+      frame_head: `0x${config.frame_head.toString(16)}`,
+      apn: config.apn,
+      server_addr: config.server_addr,
+      server_port: config.server_port,
+      modbus_slave_id: config.modbus_slave_id,
+      send_interval_mins: config.send_interval_mins,
+      eui64: UserConfig.formatHexArray(config.eui64),
+      ble_addr: UserConfig.formatHexArray(config.ble_addr),
+    });
 
     const hex = config.toHex();
     const bytes = UserConfig.hexToBytes(hex);
@@ -87,15 +126,15 @@ const ConfigurationTab = ({ characteristics, configData, parsedConfig }) => {
 
     setIsWriting(true);
     try {
-      if (characteristic.writeWithResponse) {
-        await characteristic.writeWithResponse(base64Value);
-      } else if (characteristic.writeWithoutResponse) {
+      if (characteristic.writeWithoutResponse) {
         await characteristic.writeWithoutResponse(base64Value);
+        showToast('success', 'Success', 'Configuration sent to device');
+      } else if (characteristic.writeWithResponse) {
+        await characteristic.writeWithResponse(base64Value);
+        showToast('success', 'Success', 'Configuration written to device');
       } else {
         throw new Error('No write method available on characteristic');
       }
-
-      showToast('success', 'Success', 'Configuration written to device');
     } catch (error) {
       console.error('Write config error:', error);
       showToast('error', 'Error', 'Failed to write configuration');
@@ -109,11 +148,11 @@ const ConfigurationTab = ({ characteristics, configData, parsedConfig }) => {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Device Configuration</Text>
         <Text style={styles.sectionSubtitle}>
-          EUI is read-only; edit APN, server port, and send interval then write.
+          EUI-64 is read-only. Edit other fields and click Write to save.
         </Text>
 
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>EUI-64</Text>
+          <Text style={styles.label}>EUI-64 (Read-Only)</Text>
           <TextInput
             style={[styles.input, styles.disabledInput]}
             value={eui64}
@@ -139,6 +178,7 @@ const ConfigurationTab = ({ characteristics, configData, parsedConfig }) => {
             value={serverAddr}
             onChangeText={setServerAddr}
             placeholder="Enter server address"
+            autoCapitalize="none"
           />
         </View>
 
@@ -154,7 +194,7 @@ const ConfigurationTab = ({ characteristics, configData, parsedConfig }) => {
         </View>
 
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Send Interval (mins)</Text>
+          <Text style={styles.label}>Send Interval (minutes)</Text>
           <TextInput
             style={styles.input}
             value={sendIntervalMins}
@@ -165,40 +205,19 @@ const ConfigurationTab = ({ characteristics, configData, parsedConfig }) => {
         </View>
 
         <TouchableOpacity
-          style={[styles.writeButton, !parsedConfig && styles.disabledButton]}
+          style={[
+            styles.writeButton,
+            (!parsedConfig || isWriting) && styles.disabledButton,
+          ]}
           onPress={handleWriteConfig}
           disabled={isWriting || !parsedConfig}
         >
           {isWriting ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.buttonText}>Write Config</Text>
+            <Text style={styles.buttonText}>Write Configuration</Text>
           )}
         </TouchableOpacity>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Notifiable Characteristic Data</Text>
-        <Text style={styles.sectionSubtitle}>
-          Real-time notifications from device
-        </Text>
-
-        {configData.length === 0 ? (
-          <View style={styles.noDataContainer}>
-            <Text style={styles.noDataText}>Waiting for notifications...</Text>
-          </View>
-        ) : (
-          <View style={styles.dataList}>
-            {configData.map((item, index) => (
-              <View key={index} style={styles.notificationItem}>
-                <Text style={styles.notificationTime}>
-                  {item.timestamp.toLocaleTimeString()}
-                </Text>
-                <Text style={styles.notificationData}>{item.data}</Text>
-              </View>
-            ))}
-          </View>
-        )}
       </View>
     </ScrollView>
   );
@@ -267,37 +286,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 15,
     fontWeight: '600',
-  },
-  dataList: {
-    maxHeight: 500,
-  },
-  noDataContainer: {
-    padding: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  noDataText: {
-    fontSize: 14,
-    color: '#999',
-    fontStyle: 'italic',
-  },
-  notificationItem: {
-    backgroundColor: '#f8f9fa',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 8,
-    borderLeftWidth: 4,
-    borderLeftColor: '#007AFF',
-  },
-  notificationTime: {
-    fontSize: 11,
-    color: '#999',
-    marginBottom: 4,
-  },
-  notificationData: {
-    fontSize: 14,
-    color: '#333',
-    fontFamily: 'monospace',
   },
 });
 

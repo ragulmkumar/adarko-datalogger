@@ -1,202 +1,196 @@
 const USER_CONFIG_SIZE = 119;
 
 class UserConfig {
+  constructor() {
+    this.frame_head = 0;
 
-    constructor() {
-        this.frame_head = 0;
+    this.apn = '';
+    this.server_addr = '';
 
-        this.apn = "";
-        this.server_addr = "";
+    this.server_port = 0;
+    this.modbus_slave_id = 0;
+    this.send_interval_mins = 0;
 
-        this.server_port = 0;
-        this.modbus_slave_id = 0;
-        this.send_interval_mins = 0;
+    this.eui64 = new Uint8Array(8);
+    this.ble_addr = new Uint8Array(6);
+  }
 
-        this.eui64 = new Uint8Array(8);
-        this.ble_addr = new Uint8Array(6);
+  // =========================================================
+  // Convert CONFIG -> HEX
+  // =========================================================
+  toHex() {
+    const buffer = new ArrayBuffer(USER_CONFIG_SIZE);
+
+    const view = new DataView(buffer);
+    const bytes = new Uint8Array(buffer);
+
+    let offset = 0;
+
+    // uint16_t frame_head
+    view.setUint16(offset, this.frame_head, true);
+    offset += 2;
+
+    // char apn[32]
+    UserConfig.writeCString(bytes, offset, this.apn, 32);
+    offset += 32;
+
+    // char server_addr[64]
+    UserConfig.writeCString(bytes, offset, this.server_addr, 64);
+    offset += 64;
+
+    // uint16_t server_port
+    view.setUint16(offset, this.server_port, true);
+    offset += 2;
+
+    // uint8_t modbus_slave_id
+    view.setUint8(offset, this.modbus_slave_id);
+    offset += 1;
+
+    // uint32_t send_interval_mins
+    view.setUint32(offset, this.send_interval_mins, true);
+    offset += 4;
+
+    // uint8_t eui64[8]
+    bytes.set(this.eui64, offset);
+    offset += 8;
+
+    // uint8_t ble_addr[6]
+    bytes.set(this.ble_addr, offset);
+    offset += 6;
+
+    return UserConfig.bytesToHex(bytes);
+  }
+
+  // =========================================================
+  // Convert HEX -> CONFIG
+  // =========================================================
+  static fromHex(hexString) {
+    const bytes = UserConfig.hexToBytes(hexString);
+
+    if (bytes.length !== USER_CONFIG_SIZE) {
+      throw new Error(
+        `Invalid size. Expected ${USER_CONFIG_SIZE} bytes, got ${bytes.length}`,
+      );
     }
 
-    // =========================================================
-    // Convert CONFIG -> HEX
-    // =========================================================
-    toHex() {
+    const view = new DataView(bytes.buffer);
 
-        const buffer = new ArrayBuffer(USER_CONFIG_SIZE);
+    const cfg = new UserConfig();
 
-        const view = new DataView(buffer);
-        const bytes = new Uint8Array(buffer);
+    let offset = 0;
 
-        let offset = 0;
+    // uint16_t frame_head
+    cfg.frame_head = view.getUint16(offset, true);
+    offset += 2;
 
-        // uint16_t frame_head
-        view.setUint16(offset, this.frame_head, true);
-        offset += 2;
+    // char apn[32]
+    cfg.apn = UserConfig.readCString(bytes, offset, 32);
+    offset += 32;
 
-        // char apn[32]
-        UserConfig.writeCString(bytes, offset, this.apn, 32);
-        offset += 32;
+    // char server_addr[64]
+    cfg.server_addr = UserConfig.readCString(bytes, offset, 64);
+    offset += 64;
 
-        // char server_addr[64]
-        UserConfig.writeCString(bytes, offset, this.server_addr, 64);
-        offset += 64;
+    // uint16_t server_port
+    cfg.server_port = view.getUint16(offset, true);
+    offset += 2;
 
-        // uint16_t server_port
-        view.setUint16(offset, this.server_port, true);
-        offset += 2;
+    // uint8_t modbus_slave_id
+    cfg.modbus_slave_id = view.getUint8(offset);
+    offset += 1;
 
-        // uint8_t modbus_slave_id
-        view.setUint8(offset, this.modbus_slave_id);
-        offset += 1;
+    // uint32_t send_interval_mins
+    cfg.send_interval_mins = view.getUint32(offset, true);
+    offset += 4;
 
-        // uint32_t send_interval_mins
-        view.setUint32(offset, this.send_interval_mins, true);
-        offset += 4;
+    // uint8_t eui64[8]
+    cfg.eui64 = bytes.slice(offset, offset + 8);
+    offset += 8;
 
-        // uint8_t eui64[8]
-        bytes.set(this.eui64, offset);
-        offset += 8;
+    // uint8_t ble_addr[6]
+    cfg.ble_addr = bytes.slice(offset, offset + 6);
+    offset += 6;
 
-        // uint8_t ble_addr[6]
-        bytes.set(this.ble_addr, offset);
-        offset += 6;
+    return cfg;
+  }
 
-        return UserConfig.bytesToHex(bytes);
+  // =========================================================
+  // Helpers
+  // =========================================================
+
+  static writeCString(bytes, offset, str, maxLen) {
+    // Clear field
+    for (let i = 0; i < maxLen; i++) {
+      bytes[offset + i] = 0;
     }
 
-    // =========================================================
-    // Convert HEX -> CONFIG
-    // =========================================================
-    static fromHex(hexString) {
+    const length = Math.min(str.length, maxLen - 1);
+    for (let i = 0; i < length; i++) {
+      bytes[offset + i] = str.charCodeAt(i);
+    }
+  }
 
-        const bytes = UserConfig.hexToBytes(hexString);
+  static readCString(bytes, offset, maxLen) {
+    let end = offset;
+    const maxEnd = offset + maxLen;
 
-        if (bytes.length !== USER_CONFIG_SIZE) {
-            throw new Error(
-                `Invalid size. Expected ${USER_CONFIG_SIZE} bytes, got ${bytes.length}`
-            );
-        }
-
-        const view = new DataView(bytes.buffer);
-
-        const cfg = new UserConfig();
-
-        let offset = 0;
-
-        // uint16_t frame_head
-        cfg.frame_head = view.getUint16(offset, true);
-        offset += 2;
-
-        // char apn[32]
-        cfg.apn = UserConfig.readCString(bytes, offset, 32);
-        offset += 32;
-
-        // char server_addr[64]
-        cfg.server_addr = UserConfig.readCString(bytes, offset, 64);
-        offset += 64;
-
-        // uint16_t server_port
-        cfg.server_port = view.getUint16(offset, true);
-        offset += 2;
-
-        // uint8_t modbus_slave_id
-        cfg.modbus_slave_id = view.getUint8(offset);
-        offset += 1;
-
-        // uint32_t send_interval_mins
-        cfg.send_interval_mins = view.getUint32(offset, true);
-        offset += 4;
-
-        // uint8_t eui64[8]
-        cfg.eui64 = bytes.slice(offset, offset + 8);
-        offset += 8;
-
-        // uint8_t ble_addr[6]
-        cfg.ble_addr = bytes.slice(offset, offset + 6);
-        offset += 6;
-
-        return cfg;
+    while (end < maxEnd && bytes[end] !== 0) {
+      end += 1;
     }
 
-    // =========================================================
-    // Helpers
-    // =========================================================
+    const slice = bytes.slice(offset, end);
+    return String.fromCharCode.apply(null, slice);
+  }
 
-    static writeCString(bytes, offset, str, maxLen) {
+  static hexToBytes(hex) {
+    // Remove all whitespace and colons
+    const clean = hex.replace(/\s+/g, '').replace(/:/g, '');
 
-        // Clear field
-        for (let i = 0; i < maxLen; i++) {
-            bytes[offset + i] = 0;
-        }
-
-        const length = Math.min(str.length, maxLen - 1);
-        for (let i = 0; i < length; i++) {
-            bytes[offset + i] = str.charCodeAt(i);
-        }
+    if (clean.length % 2 !== 0) {
+      throw new Error(`Invalid hex string length: ${clean.length}`);
     }
 
-    static readCString(bytes, offset, maxLen) {
-        let end = offset;
-        const maxEnd = offset + maxLen;
+    const bytes = new Uint8Array(clean.length / 2);
 
-        while (end < maxEnd && bytes[end] !== 0) {
-            end += 1;
-        }
-
-        const slice = bytes.slice(offset, end);
-        return String.fromCharCode.apply(null, slice);
+    for (let i = 0; i < bytes.length; i++) {
+      const byteStr = clean.substr(i * 2, 2);
+      bytes[i] = parseInt(byteStr, 16);
     }
 
-    static hexToBytes(hex) {
+    return bytes;
+  }
 
-        const clean = hex.replace(/\s+/g, "");
+  static bytesToHex(bytes) {
+    return Array.from(bytes)
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join(' ');
+  }
 
-        if (clean.length % 2 !== 0) {
-            throw new Error("Invalid hex string");
-        }
+  static formatHexArray(bytes) {
+    return Array.from(bytes)
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join(':')
+      .toUpperCase();
+  }
 
-        const bytes = new Uint8Array(clean.length / 2);
+  print() {
+    console.log(
+      'frame_head         :',
+      '0x' + this.frame_head.toString(16).toUpperCase(),
+    );
+    console.log('apn                :', this.apn);
+    console.log('server_addr        :', this.server_addr);
+    console.log('server_port        :', this.server_port);
+    console.log('modbus_slave_id    :', this.modbus_slave_id);
+    console.log('send_interval_mins :', this.send_interval_mins);
 
-        for (let i = 0; i < bytes.length; i++) {
-            bytes[i] = parseInt(clean.substr(i * 2, 2), 16);
-        }
+    console.log('eui64              :', UserConfig.formatHexArray(this.eui64));
 
-        return bytes;
-    }
-
-    static bytesToHex(bytes) {
-
-        return Array.from(bytes)
-            .map(b => b.toString(16).padStart(2, "0"))
-            .join(" ");
-    }
-
-    static formatHexArray(bytes) {
-
-        return Array.from(bytes)
-            .map(b => b.toString(16).padStart(2, "0"))
-            .join(":")
-            .toUpperCase();
-    }
-
-    print() {
-
-        console.log("frame_head         :", "0x" + this.frame_head.toString(16).toUpperCase());
-        console.log("apn                :", this.apn);
-        console.log("server_addr        :", this.server_addr);
-        console.log("server_port        :", this.server_port);
-        console.log("modbus_slave_id    :", this.modbus_slave_id);
-        console.log("send_interval_mins :", this.send_interval_mins);
-
-        console.log(
-            "eui64              :",
-            UserConfig.formatHexArray(this.eui64)
-        );
-
-        console.log(
-            "ble_addr           :",
-            UserConfig.formatHexArray(this.ble_addr)
-        );
-    }
+    console.log(
+      'ble_addr           :',
+      UserConfig.formatHexArray(this.ble_addr),
+    );
+  }
 }
 
 export default UserConfig;

@@ -1,10 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import BluetoothManager from '../../BluetoothManager';
 import { showToast } from './ShowToast';
 
-const OTA_SERVICE_UUID = '0000fe20-cc7a-482a-984a-7f2ed5b3e58f';
 const CONFIG_SERVICE_UUID = '0000fe40-cc7a-482a-984a-7f2ed5b3e58f';
+const CONFIG_WRITE_CHAR_UUID = '0000fe41-8e22-4541-9d4c-21edae82ed19';
+const CONFIG_NOTIFY_CHAR_UUID = '0000fe42-8e22-4541-9d4c-21edae82ed19';
 
+const OTA_SERVICE_UUID = '0000fe20-cc7a-482a-984a-7f2ed5b3e58f';
+const OTA_BASE_CHAR_UUID = '0000fe22-cc7a-482a-984a-7f2ed5b3e58f';
+const OTA_CFM_CHAR_UUID = '0000fe23-cc7a-482a-984a-7f2ed5b3e58f';
+const OTA_DATA_CHAR_UUID = '0000fe24-cc7a-482a-984a-7f2ed5b3e58f';
 
 export const useBluetoothCharacteristics = (
   deviceId,
@@ -12,6 +17,11 @@ export const useBluetoothCharacteristics = (
   activeTab,
 ) => {
   const [characteristics, setCharacteristics] = useState({
+    otaBaseCharacteristic: null,
+    otaConfirmCharacteristic: null,
+    otaDataCharacteristic: null,
+    configWriteCharacteristic: null,
+    configNotifyCharacteristic: null,
     writeAddressCharacteristic: null,
     writeWithoutResponseCharacteristic: null,
     indicateCharacteristic: null,
@@ -23,40 +33,93 @@ export const useBluetoothCharacteristics = (
   });
   const [isConnecting, setIsConnecting] = useState(false);
 
+  const isConnectingRef = useRef(false);
+  const deviceRef = useRef(null);
+  const notificationSubscriptionRef = useRef(null);
+  const otaIndicationSubscriptionRef = useRef(null);
+  const isMountedRef = useRef(true);
+  const deviceIdRef = useRef(deviceId);
+
   useEffect(() => {
+    isMountedRef.current = true;
+    deviceIdRef.current = deviceId;
+
     const manager = BluetoothManager.getInstance();
-    let device = null;
+
+    const setupNotifications = async notifyChar => {
+      if (!notifyChar) return;
+
+      try {
+        if (notificationSubscriptionRef.current) {
+          notificationSubscriptionRef.current.remove();
+          notificationSubscriptionRef.current = null;
+        }
+
+        console.log('Setting up notification monitoring...');
+        const subscription = notifyChar.monitor((error, characteristic) => {
+          if (error) {
+            console.error('Notification error:', error);
+            return;
+          }
+          if (
+            characteristic?.value &&
+            onNotificationReceived &&
+            isMountedRef.current
+          ) {
+            console.log('Notification received from device');
+            onNotificationReceived(characteristic.value, 'config');
+          }
+        });
+
+        notificationSubscriptionRef.current = subscription;
+        console.log('Notification monitoring active');
+      } catch (error) {
+        console.error('Error setting up notifications:', error);
+      }
+    };
 
     const fetchCharacteristics = async () => {
-      if (isConnecting || characteristics.isConnected) {
+      if (isConnectingRef.current || characteristics.isConnected) {
         console.log('Already connecting or connected, skipping');
         return;
       }
 
+      isConnectingRef.current = true;
       setIsConnecting(true);
+
       try {
-        const connectId = deviceId?.id ?? deviceId;
+        const connectId = deviceIdRef.current?.id ?? deviceIdRef.current;
         console.log('Connecting to device:', connectId);
 
-        device = await manager.connectToDevice(connectId);
+        const device = await manager.connectToDevice(connectId);
+        deviceRef.current = device;
         console.log('Connected to device');
 
-        // Set up disconnection listener
         device.onDisconnected(error => {
           console.log('Device disconnected:', error);
-          setCharacteristics(prev => ({ ...prev, isConnected: false }));
-          showToast('info', 'Disconnected', 'Device has been disconnected');
+          if (isMountedRef.current) {
+            setCharacteristics(prev => ({ ...prev, isConnected: false }));
+            showToast('info', 'Disconnected', 'Device has been disconnected');
+          }
+          deviceRef.current = null;
         });
 
-        const mtu = await device.requestMTU(243);
-        console.log('MTU set to:', mtu);
+        try {
+          const mtu = await device.requestMTU(240);
+          console.log(
+            'MTU set to:',
+            typeof mtu === 'object' ? mtu.mtu || 240 : mtu,
+          );
+        } catch (mtuError) {
+          console.log('Failed to set MTU:', mtuError);
+        }
 
         await device.discoverAllServicesAndCharacteristics();
         console.log('Services discovered');
 
         const services = await device.services();
         console.log(
-          'Services:',
+          'Available Services:',
           services.map(s => s.uuid),
         );
 
@@ -64,163 +127,134 @@ export const useBluetoothCharacteristics = (
           service =>
             service.uuid.toLowerCase() === OTA_SERVICE_UUID.toLowerCase(),
         );
+
         const configService = services.find(
           service =>
             service.uuid.toLowerCase() === CONFIG_SERVICE_UUID.toLowerCase(),
         );
 
-        if (!otaService || !configService) {
-          throw new Error('Required service(s) not found');
-        }
+        if (!otaService) throw new Error('OTA Service not found');
+        if (!configService) throw new Error('Configuration Service not found');
 
         const otaCharacteristics = await device.characteristicsForService(
           OTA_SERVICE_UUID,
         );
-        const ConfigCharacteristics = await device.characteristicsForService(
+        const configCharacteristics = await device.characteristicsForService(
           CONFIG_SERVICE_UUID,
         );
 
-        // Find characteristics by their properties instead of hardcoded UUIDs
-        // This is more flexible as device UUIDs may vary
-
-        // From OTA Service
-        const writeAddressCharacteristic =
-          otaCharacteristics.find(
-            c => c.isWritableWithoutResponse && !c.isIndicatable,
-          ) || otaCharacteristics[0]; // Fallback to first if not found
-
-        const writeWithoutResponseCharacteristic = otaCharacteristics.find(
-          c => c.isWritableWithoutResponse && c !== writeAddressCharacteristic,
+        const otaBaseCharacteristic = otaCharacteristics.find(
+          c => c.uuid.toLowerCase() === OTA_BASE_CHAR_UUID.toLowerCase(),
+        );
+        const otaConfirmCharacteristic = otaCharacteristics.find(
+          c => c.uuid.toLowerCase() === OTA_CFM_CHAR_UUID.toLowerCase(),
+        );
+        const otaDataCharacteristic = otaCharacteristics.find(
+          c => c.uuid.toLowerCase() === OTA_DATA_CHAR_UUID.toLowerCase(),
+        );
+        const configWriteCharacteristic = configCharacteristics.find(
+          c => c.uuid.toLowerCase() === CONFIG_WRITE_CHAR_UUID.toLowerCase(),
+        );
+        const configNotifyCharacteristic = configCharacteristics.find(
+          c => c.uuid.toLowerCase() === CONFIG_NOTIFY_CHAR_UUID.toLowerCase(),
         );
 
-        const indicateCharacteristic = otaCharacteristics.find(
-          c => c.isIndicatable,
-        );
+        if (!configWriteCharacteristic)
+          throw new Error('Configuration Write characteristic not found');
+        if (!configNotifyCharacteristic)
+          throw new Error('Configuration Notify characteristic not found');
 
-        // From CONFIG Service
-        const notifiableCharacteristic = ConfigCharacteristics.find(
-          c => c.isNotifiable,
-        );
+        console.log('Config Write Characteristic found');
+        console.log('Config Notify Characteristic found');
 
-        const writeConfigCharacteristic = ConfigCharacteristics.find(
-          c => c.isWritableWithoutResponse,
-        );
+        // Setup notifications only, don't read
+        await setupNotifications(configNotifyCharacteristic);
 
-        // For backwards compatibility, alias notifiable as both ConfigurationCharacteristic and LogCharacteristic
-        const ConfigurationCharacteristic = writeConfigCharacteristic;
-        const LogCharacteristic = notifiableCharacteristic;
+        if (
+          otaConfirmCharacteristic &&
+          otaConfirmCharacteristic.isIndicatable
+        ) {
+          if (otaIndicationSubscriptionRef.current) {
+            otaIndicationSubscriptionRef.current.remove();
+          }
+          otaIndicationSubscriptionRef.current =
+            otaConfirmCharacteristic.monitor((error, characteristic) => {
+              if (error) {
+                console.error('OTA error:', error);
+                return;
+              }
+              if (
+                characteristic?.value &&
+                onNotificationReceived &&
+                isMountedRef.current
+              ) {
+                console.log('OTA indication received');
+                onNotificationReceived(characteristic.value, 'ota');
+              }
+            });
+          console.log('OTA monitoring active');
+        }
 
-        setCharacteristics({
-          writeAddressCharacteristic,
-          writeWithoutResponseCharacteristic,
-          indicateCharacteristic,
-          ConfigurationCharacteristic,
-          LogCharacteristic,
-          mtu,
+        const chars = {
+          otaBaseCharacteristic,
+          otaConfirmCharacteristic,
+          otaDataCharacteristic,
+          configWriteCharacteristic,
+          configNotifyCharacteristic,
+          writeAddressCharacteristic: otaBaseCharacteristic,
+          writeWithoutResponseCharacteristic: otaDataCharacteristic,
+          indicateCharacteristic: otaConfirmCharacteristic,
+          ConfigurationCharacteristic: configWriteCharacteristic,
+          ConfigurationCharacteristicRead: configWriteCharacteristic,
+          LogCharacteristic: configNotifyCharacteristic,
+          mtu: 240,
           device,
           isConnected: true,
-        });
+        };
+
+        if (isMountedRef.current) {
+          setCharacteristics(chars);
+        }
 
         showToast('success', 'Connected', 'Successfully connected to device');
+        console.log('Notifications are active');
       } catch (error) {
-        console.error('Error fetching characteristics:', error);
-        showToast(
-          'error',
-          'Connection Error',
-          error.message || 'Failed to connect to device',
-        );
-      } finally {
-        setIsConnecting(false);
-      }
-    };
-
-    fetchCharacteristics();
-
-    return () => {
-      if (device) {
-        device.cancelConnection();
-      }
-    };
-  }, [deviceId, onNotificationReceived]);
-
-  useEffect(() => {
-    const notificationSubscriptions = [];
-
-    const parseNotificationValue = (base64Value, sourceUUID) => {
-      try {
-        const binaryString = atob(base64Value);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-        console.log(`[${sourceUUID}] Raw bytes:`, Array.from(bytes));
-        return bytes;
-      } catch (error) {
-        console.error('Error parsing notification value:', error);
-        return null;
-      }
-    };
-
-    const setupSubscription = () => {
-      if (!characteristics.device || !characteristics.isConnected) {
-        return;
-      }
-
-      const monitorCharacteristic =
-        activeTab === 'ota'
-          ? characteristics.indicateCharacteristic
-          : characteristics.LogCharacteristic;
-
-      if (!monitorCharacteristic) {
-        return;
-      }
-
-      const isValidOta =
-        activeTab === 'ota' && monitorCharacteristic.isIndicatable;
-      const isValidConfig =
-        activeTab === 'configuration' && monitorCharacteristic.isNotifiable;
-
-      if (!isValidOta && !isValidConfig) {
-        return;
-      }
-
-      const type = activeTab === 'ota' ? 'indicate' : 'config';
-      const description =
-        activeTab === 'ota' ? 'Indicate Characteristic' : 'Notifiable Characteristic';
-      console.log(
-        `Setting up monitoring for ${description}: ${monitorCharacteristic.uuid}`,
-      );
-
-      const sub = monitorCharacteristic.monitor((error, characteristic) => {
-        if (error) {
-          console.error(`${description} error:`, error);
-          return;
-        }
-        if (characteristic?.value) {
-          console.log(`${description} notification received`);
-          const rawBytes = parseNotificationValue(
-            characteristic.value,
-            characteristic.uuid,
+        console.error('Error:', error);
+        if (isMountedRef.current) {
+          showToast(
+            'error',
+            'Connection Error',
+            error.message || 'Failed to connect to device',
           );
-          if (rawBytes && onNotificationReceived) {
-            onNotificationReceived(rawBytes, type);
-          }
         }
-      });
-
-      notificationSubscriptions.push(sub);
+      } finally {
+        if (isMountedRef.current) {
+          setIsConnecting(false);
+        }
+        isConnectingRef.current = false;
+      }
     };
 
-    setupSubscription();
+    if (!characteristics.isConnected && !isConnectingRef.current) {
+      fetchCharacteristics();
+    }
 
     return () => {
-      notificationSubscriptions.forEach(sub => {
-        if (sub && sub.remove) {
-          sub.remove();
-        }
-      });
+      isMountedRef.current = false;
+      if (notificationSubscriptionRef.current) {
+        notificationSubscriptionRef.current.remove();
+        notificationSubscriptionRef.current = null;
+      }
+      if (otaIndicationSubscriptionRef.current) {
+        otaIndicationSubscriptionRef.current.remove();
+        otaIndicationSubscriptionRef.current = null;
+      }
+      if (deviceRef.current) {
+        deviceRef.current.cancelConnection();
+        deviceRef.current = null;
+      }
     };
-  }, [characteristics.device, characteristics.isConnected, characteristics.indicateCharacteristic, characteristics.LogCharacteristic, activeTab, onNotificationReceived]);
+  }, [deviceId]);
 
   return characteristics;
 };
