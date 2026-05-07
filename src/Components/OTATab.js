@@ -405,20 +405,6 @@ const OTATab = ({ characteristics }) => {
           Update your device firmware over the air. Select a .bin file and start
           the upload process.
         </Text>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>MTU Size:</Text>
-          <Text style={styles.infoValue}>{mtu || 240} bytes</Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Chunk Size:</Text>
-          <Text style={styles.infoValue}>{CHUNK_LENGTH} bytes</Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>OTA Support:</Text>
-          <Text style={[styles.infoValue, { color: '#4CD964' }]}>
-            ✓ Available
-          </Text>
-        </View>
       </View>
 
       <View style={styles.section}>
