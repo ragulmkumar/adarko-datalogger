@@ -14,6 +14,7 @@ import { showToast } from '../utils/ShowToast';
 
 const ConfigurationTab = ({ characteristics, configData, parsedConfig }) => {
   const [apn, setApn] = useState('');
+  const [serverAddr, setServerAddr] = useState('');
   const [serverPort, setServerPort] = useState('');
   const [sendIntervalMins, setSendIntervalMins] = useState('');
   const [eui64, setEui64] = useState('');
@@ -22,6 +23,7 @@ const ConfigurationTab = ({ characteristics, configData, parsedConfig }) => {
   useEffect(() => {
     if (!parsedConfig) {
       setApn('');
+      setServerAddr('');
       setServerPort('');
       setSendIntervalMins('');
       setEui64('');
@@ -29,6 +31,7 @@ const ConfigurationTab = ({ characteristics, configData, parsedConfig }) => {
     }
 
     setApn(parsedConfig.apn || '');
+    setServerAddr(parsedConfig.server_addr || '');
     setServerPort(parsedConfig.server_port?.toString() || '');
     setSendIntervalMins(parsedConfig.send_interval_mins?.toString() || '');
     setEui64(
@@ -71,7 +74,7 @@ const ConfigurationTab = ({ characteristics, configData, parsedConfig }) => {
     const config = new UserConfig();
     config.frame_head = parsedConfig.frame_head || 0xad55;
     config.apn = apn;
-    config.server_addr = parsedConfig.server_addr || '';
+    config.server_addr = serverAddr;
     config.server_port = Number(serverPort) || 0;
     config.modbus_slave_id = parsedConfig.modbus_slave_id || 0;
     config.send_interval_mins = Number(sendIntervalMins) || 0;
@@ -126,6 +129,16 @@ const ConfigurationTab = ({ characteristics, configData, parsedConfig }) => {
             value={apn}
             onChangeText={setApn}
             placeholder="Enter APN"
+          />
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Server Address</Text>
+          <TextInput
+            style={styles.input}
+            value={serverAddr}
+            onChangeText={setServerAddr}
+            placeholder="Enter server address"
           />
         </View>
 
