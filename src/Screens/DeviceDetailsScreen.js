@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,111 +6,96 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   ScrollView,
+  StatusBar,
+  Modal,
+  TouchableWithoutFeedback,
 } from 'react-native';
-import { useRoute } from '@react-navigation/native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRoute, useNavigation } from '@react-navigation/native';
+import Icon from 'react-native-vector-icons/Ionicons';
 import { useBluetoothCharacteristics } from '../utils/useBluetoothCharacteristics';
 import OTATab from '../Components/OTATab';
 import ConfigurationTab from '../Components/ConfigurationTab';
 import UserConfig from '../utils/ParseConfig';
 import { showToast } from '../utils/ShowToast';
+import BluetoothManager from '../../BluetoothManager';
 
 const DeviceDetailsScreen = () => {
   const route = useRoute();
+  const navigation = useNavigation();
   const { deviceId: routeDeviceId, deviceName: routeDeviceName } = route.params;
   const deviceId = routeDeviceId?.id ?? routeDeviceId;
   const deviceName = routeDeviceName?.name ?? routeDeviceName;
   const [activeTab, setActiveTab] = useState('configuration');
   const [configData, setConfigData] = useState([]);
   const [parsedConfig, setParsedConfig] = useState(null);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
+  const [showDisconnectModal, setShowDisconnectModal] = useState(false);
+
+  const handleDisconnect = async () => {
+    if (isDisconnecting) return;
+
+    setIsDisconnecting(true);
+    setShowDisconnectModal(false);
+
+    try {
+      await BluetoothManager.getInstance().disconnectDevice(deviceId);
+      setIsConnected(false);
+      showToast('info', 'Disconnected', `Disconnected from ${deviceName}`);
+      navigation.goBack();
+    } catch (error) {
+      showToast('error', 'Error', 'Failed to disconnect');
+    } finally {
+      setIsDisconnecting(false);
+    }
+  };
 
   const handleNotification = useCallback((value, type = 'ota') => {
     const timestamp = new Date();
-
-    console.log('\n========================================');
-    console.log('NOTIFICATION RECEIVED');
-    console.log('Time:', timestamp.toLocaleTimeString());
-    console.log('Type:', type);
-    console.log('Raw value type:', typeof value);
-    console.log('========================================\n');
+    console.log(
+      `[${timestamp.toLocaleTimeString()}] Notification received - Type: ${type}`,
+    );
 
     let bytes = null;
 
-    // Extract bytes from different value types
     if (typeof value === 'string') {
-      console.log('Processing string value (base64)');
-      console.log('Base64 string length:', value.length);
-      console.log('First 50 chars:', value.substring(0, 50));
-
       try {
         const binaryString = atob(value);
         bytes = new Uint8Array(binaryString.length);
         for (let i = 0; i < binaryString.length; i++) {
           bytes[i] = binaryString.charCodeAt(i);
         }
-        console.log('Successfully decoded base64 to bytes');
       } catch (e) {
-        console.error('Base64 decode error:', e);
         return;
       }
     } else if (value instanceof Uint8Array) {
       bytes = value;
-      console.log('Direct Uint8Array received, length:', bytes.length);
     } else if (value && typeof value === 'object') {
-      console.log('Object structure detected');
-      console.log('Object keys:', Object.keys(value));
-
       if (value.value && typeof value.value === 'string') {
-        console.log('Found value.value property, processing as base64');
         try {
           const binaryString = atob(value.value);
           bytes = new Uint8Array(binaryString.length);
           for (let i = 0; i < binaryString.length; i++) {
             bytes[i] = binaryString.charCodeAt(i);
           }
-          console.log('Successfully decoded object.value to bytes');
         } catch (e) {
-          console.error('Object value decode error:', e);
           return;
         }
       } else if (value.data && typeof value.data === 'string') {
-        console.log('Found data property, processing as base64');
         try {
           const binaryString = atob(value.data);
           bytes = new Uint8Array(binaryString.length);
           for (let i = 0; i < binaryString.length; i++) {
             bytes[i] = binaryString.charCodeAt(i);
           }
-          console.log('Successfully decoded object.data to bytes');
         } catch (e) {
-          console.error('Object data decode error:', e);
           return;
         }
       }
     }
 
-    if (!bytes || bytes.length === 0) {
-      console.log('ERROR: No valid bytes to process');
-      return;
-    }
-
-    console.log('\n========================================');
-    console.log('BYTE DATA');
-    console.log('Total bytes:', bytes.length);
-    console.log(
-      'First 20 bytes:',
-      Array.from(bytes.slice(0, 20))
-        .map(b => '0x' + b.toString(16).toUpperCase().padStart(2, '0'))
-        .join(', '),
-    );
-    if (bytes.length > 20) {
-      console.log(
-        'Last 20 bytes:',
-        Array.from(bytes.slice(-20))
-          .map(b => '0x' + b.toString(16).toUpperCase().padStart(2, '0'))
-          .join(', '),
-      );
-    }
-    console.log('========================================\n');
+    if (!bytes || bytes.length === 0) return;
 
     const bytesToHexDisplay = bytesArray => {
       return Array.from(bytesArray)
@@ -120,11 +105,7 @@ const DeviceDetailsScreen = () => {
 
     if (type === 'config') {
       const hexDisplay = bytesToHexDisplay(bytes);
-
-      console.log('\n========================================');
-      console.log('CONFIGURATION DATA');
-      console.log('Hex dump:', hexDisplay);
-      console.log('========================================\n');
+      console.log('Received Value: ', hexDisplay);
 
       setConfigData(prev => {
         const newData = [{ timestamp: new Date(), data: hexDisplay }, ...prev];
@@ -133,27 +114,9 @@ const DeviceDetailsScreen = () => {
 
       if (bytes.length === 119) {
         try {
-          const hexString = bytesToHexDisplay(bytes).replace(/ /g, '');
+          const hexString = hexDisplay.replace(/ /g, '');
           const config = UserConfig.fromHex(hexString);
           setParsedConfig(config);
-
-          console.log('\n========================================');
-          console.log('PARSED CONFIGURATION');
-          console.log(
-            'Frame Head: 0x' + config.frame_head.toString(16).toUpperCase(),
-          );
-          console.log('APN:', config.apn);
-          console.log('Server Address:', config.server_addr);
-          console.log('Server Port:', config.server_port);
-          console.log('Modbus Slave ID:', config.modbus_slave_id);
-          console.log('Send Interval:', config.send_interval_mins, 'minutes');
-          console.log('EUI-64:', UserConfig.formatHexArray(config.eui64));
-          console.log(
-            'BLE Address:',
-            UserConfig.formatHexArray(config.ble_addr),
-          );
-          console.log('========================================\n');
-
           showToast(
             'success',
             'Config Updated',
@@ -162,19 +125,7 @@ const DeviceDetailsScreen = () => {
         } catch (parseError) {
           console.error('Parse error:', parseError);
         }
-      } else {
-        console.log(
-          'Partial data received (',
-          bytes.length,
-          'bytes), waiting for full 119-byte config',
-        );
       }
-    } else {
-      const hexDisplay = bytesToHexDisplay(bytes);
-      console.log('\n========================================');
-      console.log('OTA DATA');
-      console.log('Hex dump:', hexDisplay);
-      console.log('========================================\n');
     }
   }, []);
 
@@ -182,6 +133,75 @@ const DeviceDetailsScreen = () => {
     deviceId,
     handleNotification,
     activeTab,
+    connected => setIsConnected(connected),
+  );
+
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight: () =>
+        isConnected ? (
+          <TouchableOpacity
+            onPress={() => setShowDisconnectModal(true)}
+            disabled={isDisconnecting}
+            style={styles.headerButton}
+          >
+            {isDisconnecting ? (
+              <ActivityIndicator size="small" color="#FF3B30" />
+            ) : (
+              <>
+                <Icon name="exit-outline" size={20} color="#FF3B30" />
+                <Text style={styles.headerDisconnectText}>Disconnect</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        ) : null,
+    });
+  }, [navigation, isConnected, isDisconnecting]);
+
+  const DisconnectModal = () => (
+    <Modal
+      visible={showDisconnectModal}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => setShowDisconnectModal(false)}
+    >
+      <TouchableWithoutFeedback onPress={() => setShowDisconnectModal(false)}>
+        <View style={styles.modalOverlay}>
+          <TouchableWithoutFeedback>
+            <View style={styles.modalContent}>
+              <View style={styles.modalIconContainer}>
+                <View style={styles.modalIconCircle}>
+                  <Icon name="warning" size={32} color="#FF3B30" />
+                </View>
+              </View>
+
+              <Text style={styles.modalTitle}>Disconnect Device</Text>
+              <Text style={styles.modalMessage}>
+                Are you sure you want to disconnect from{' '}
+                {deviceName || 'this device'}?
+              </Text>
+
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.cancelButton]}
+                  onPress={() => setShowDisconnectModal(false)}
+                >
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.disconnectButton]}
+                  onPress={handleDisconnect}
+                >
+                  <Icon name="exit-outline" size={18} color="#FFFFFF" />
+                  <Text style={styles.disconnectButtonText}>Disconnect</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
+        </View>
+      </TouchableWithoutFeedback>
+    </Modal>
   );
 
   if (!characteristics.isConnected && characteristics.device === null) {
@@ -189,15 +209,28 @@ const DeviceDetailsScreen = () => {
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#007AFF" />
         <Text style={styles.loadingText}>Connecting to device...</Text>
+        <Text style={styles.loadingSubText}>Please wait</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['bottom']}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+
       <View style={styles.header}>
-        <Text style={styles.deviceName}>{deviceName || 'Unknown Device'}</Text>
-        <Text style={styles.deviceId}>ID: {deviceId}</Text>
+        <View style={styles.deviceInfoContainer}>
+          <View style={styles.deviceAvatar}>
+            <Icon name="hardware-chip" size={28} color="#007AFF" />
+          </View>
+          <View style={styles.deviceInfo}>
+            <Text style={styles.deviceName}>
+              {deviceName || 'Unknown Device'}
+            </Text>
+            <Text style={styles.deviceId}>{deviceId.substring(0, 30)}...</Text>
+          </View>
+        </View>
+
         <View style={styles.statusContainer}>
           <View
             style={[
@@ -219,6 +252,11 @@ const DeviceDetailsScreen = () => {
           ]}
           onPress={() => setActiveTab('configuration')}
         >
+          <Icon
+            name="settings-outline"
+            size={18}
+            color={activeTab === 'configuration' ? '#007AFF' : '#8E9AAB'}
+          />
           <Text
             style={[
               styles.tabText,
@@ -232,6 +270,11 @@ const DeviceDetailsScreen = () => {
           style={[styles.tab, activeTab === 'ota' && styles.activeTab]}
           onPress={() => setActiveTab('ota')}
         >
+          <Icon
+            name="cloud-upload-outline"
+            size={18}
+            color={activeTab === 'ota' ? '#007AFF' : '#8E9AAB'}
+          />
           <Text
             style={[
               styles.tabText,
@@ -243,7 +286,7 @@ const DeviceDetailsScreen = () => {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content}>
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {activeTab === 'configuration' && (
           <ConfigurationTab
             characteristics={characteristics}
@@ -253,85 +296,214 @@ const DeviceDetailsScreen = () => {
         )}
         {activeTab === 'ota' && <OTATab characteristics={characteristics} />}
       </ScrollView>
-    </View>
+
+      <DisconnectModal />
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#F5F7FA',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#F5F7FA',
   },
   loadingText: {
-    marginTop: 10,
+    marginTop: 16,
     fontSize: 16,
-    color: '#666',
+    fontWeight: '600',
+    color: '#1A2B4C',
+  },
+  loadingSubText: {
+    marginTop: 8,
+    fontSize: 13,
+    color: '#8E9AAB',
   },
   header: {
-    backgroundColor: '#fff',
-    padding: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: '#E8ECF0',
+  },
+  deviceInfoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  deviceAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#F0F4FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  deviceInfo: {
+    flex: 1,
   },
   deviceName: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 5,
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#1A2B4C',
   },
   deviceId: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 10,
+    fontSize: 11,
+    color: '#8E9AAB',
+    marginTop: 2,
   },
   statusContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#F0F4FF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
   },
   statusDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
     backgroundColor: '#FF3B30',
-    marginRight: 8,
+    marginRight: 6,
   },
   connected: {
     backgroundColor: '#34C759',
   },
   statusText: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#1A2B4C',
+  },
+  headerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    gap: 6,
+  },
+  headerDisconnectText: {
+    color: '#FF3B30',
+    fontSize: 15,
+    fontWeight: '500',
   },
   tabContainer: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 20,
+    paddingTop: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: '#E8ECF0',
   },
   tab: {
-    flex: 1,
-    paddingVertical: 15,
+    flexDirection: 'row',
     alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    marginRight: 8,
+    gap: 6,
   },
   activeTab: {
     borderBottomWidth: 2,
     borderBottomColor: '#007AFF',
   },
   tabText: {
-    fontSize: 16,
-    color: '#666',
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#8E9AAB',
   },
   activeTabText: {
     color: '#007AFF',
-    fontWeight: '600',
   },
   content: {
     flex: 1,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 24,
+    width: '85%',
+    maxWidth: 340,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  modalIconContainer: {
+    marginBottom: 16,
+  },
+  modalIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#FFF2F2',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#1A2B4C',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 15,
+    color: '#5A6B7D',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  cancelButton: {
+    backgroundColor: '#F5F7FA',
+    borderWidth: 1,
+    borderColor: '#E8ECF0',
+  },
+  cancelButtonText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#5A6B7D',
+  },
+  disconnectButton: {
+    backgroundColor: '#FF3B30',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  disconnectButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });
 
