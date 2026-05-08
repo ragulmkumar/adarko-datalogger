@@ -1,4 +1,4 @@
-const USER_CONFIG_SIZE = 119;
+const USER_CONFIG_SIZE = 123; // Updated from 119 to 123 bytes
 
 class UserConfig {
   constructor() {
@@ -13,6 +13,8 @@ class UserConfig {
 
     this.eui64 = new Uint8Array(8);
     this.ble_addr = new Uint8Array(6);
+    this.fw_version = 0;
+    this.hw_version = 0;
   }
 
   // =========================================================
@@ -57,6 +59,14 @@ class UserConfig {
     // uint8_t ble_addr[6]
     bytes.set(this.ble_addr, offset);
     offset += 6;
+
+    // uint16_t fw_version
+    view.setUint16(offset, this.fw_version, true);
+    offset += 2;
+
+    // uint16_t hw_version
+    view.setUint16(offset, this.hw_version, true);
+    offset += 2;
 
     return UserConfig.bytesToHex(bytes);
   }
@@ -111,7 +121,72 @@ class UserConfig {
     cfg.ble_addr = bytes.slice(offset, offset + 6);
     offset += 6;
 
+    // uint16_t fw_version
+    cfg.fw_version = view.getUint16(offset, true);
+    offset += 2;
+
+    // uint16_t hw_version
+    cfg.hw_version = view.getUint16(offset, true);
+    offset += 2;
+
     return cfg;
+  }
+
+  // =========================================================
+  // Format version from BCD format (e.g., 0x0200 -> "02.00")
+  // =========================================================
+  static formatVersionBCD(version) {
+    if (!version || version === 0) return '00.00';
+
+    // Extract high and low bytes
+    const highByte = (version >> 8) & 0xff;
+    const lowByte = version & 0xff;
+
+    // Convert BCD to decimal string for display
+    const highPart = ((highByte >> 4) * 10 + (highByte & 0x0f))
+      .toString()
+      .padStart(2, '0');
+    const lowPart = ((lowByte >> 4) * 10 + (lowByte & 0x0f))
+      .toString()
+      .padStart(2, '0');
+
+    return `${highPart}.${lowPart}`;
+  }
+
+  // =========================================================
+  // Parse version string in BCD format (e.g., "02.00" -> 0x0200)
+  // =========================================================
+  static parseVersionBCD(versionString) {
+    if (!versionString || versionString === '00.00') return 0;
+
+    const parts = versionString.split('.');
+    if (parts.length !== 2) return 0;
+
+    const highPart = parseInt(parts[0], 10);
+    const lowPart = parseInt(parts[1], 10);
+
+    if (isNaN(highPart) || isNaN(lowPart)) return 0;
+
+    // Convert decimal to BCD
+    const highByte = ((Math.floor(highPart / 10) << 4) | highPart % 10) & 0xff;
+    const lowByte = ((Math.floor(lowPart / 10) << 4) | lowPart % 10) & 0xff;
+
+    return (highByte << 8) | lowByte;
+  }
+
+  // =========================================================
+  // Helper to get raw version hex
+  // =========================================================
+  static formatVersionHex(version) {
+    if (!version || version === 0) return '0x0000';
+    return '0x' + version.toString(16).toUpperCase().padStart(4, '0');
+  }
+
+  // =========================================================
+  // Helper to format version for display (kept for backward compatibility)
+  // =========================================================
+  static formatVersion(version) {
+    return UserConfig.formatVersionBCD(version);
   }
 
   // =========================================================
@@ -174,6 +249,9 @@ class UserConfig {
   }
 
   print() {
+    console.log('═══════════════════════════════════════');
+    console.log('📱 DEVICE CONFIGURATION');
+    console.log('═══════════════════════════════════════');
     console.log(
       'frame_head         :',
       '0x' + this.frame_head.toString(16).toUpperCase(),
@@ -183,13 +261,42 @@ class UserConfig {
     console.log('server_port        :', this.server_port);
     console.log('modbus_slave_id    :', this.modbus_slave_id);
     console.log('send_interval_mins :', this.send_interval_mins);
-
     console.log('eui64              :', UserConfig.formatHexArray(this.eui64));
-
     console.log(
       'ble_addr           :',
       UserConfig.formatHexArray(this.ble_addr),
     );
+    console.log('───────────────────────────────────────');
+    console.log(
+      'fw_version         :',
+      UserConfig.formatVersionHex(this.fw_version),
+      `→ ${UserConfig.formatVersionBCD(this.fw_version)}`,
+    );
+    console.log(
+      'hw_version         :',
+      UserConfig.formatVersionHex(this.hw_version),
+      `→ ${UserConfig.formatVersionBCD(this.hw_version)}`,
+    );
+    console.log('═══════════════════════════════════════');
+  }
+
+  logVersionInfo() {
+    console.log('═══════════════════════════════════════');
+    console.log('📱 DEVICE VERSION INFORMATION');
+    console.log('═══════════════════════════════════════');
+    console.log(
+      `🔧 Firmware Version: ${UserConfig.formatVersionBCD(
+        this.fw_version,
+      )} (${UserConfig.formatVersionHex(this.fw_version)})`,
+    );
+    console.log(
+      `🖥️  Hardware Version: ${UserConfig.formatVersionBCD(
+        this.hw_version,
+      )} (${UserConfig.formatVersionHex(this.hw_version)})`,
+    );
+    console.log(`🆔 Device EUI-64: ${UserConfig.formatHexArray(this.eui64)}`);
+    console.log(`📡 BLE Address: ${UserConfig.formatHexArray(this.ble_addr)}`);
+    console.log('═══════════════════════════════════════');
   }
 }
 

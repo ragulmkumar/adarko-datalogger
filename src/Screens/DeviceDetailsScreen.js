@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useBluetoothCharacteristics } from '../utils/useBluetoothCharacteristics';
 import OTATab from '../Components/OTATab';
 import ConfigurationTab from '../Components/ConfigurationTab';
@@ -67,6 +68,7 @@ const DeviceDetailsScreen = () => {
           bytes[i] = binaryString.charCodeAt(i);
         }
       } catch (e) {
+        console.error('Failed to decode base64:', e);
         return;
       }
     } else if (value instanceof Uint8Array) {
@@ -80,6 +82,7 @@ const DeviceDetailsScreen = () => {
             bytes[i] = binaryString.charCodeAt(i);
           }
         } catch (e) {
+          console.error('Failed to decode value.value:', e);
           return;
         }
       } else if (value.data && typeof value.data === 'string') {
@@ -90,12 +93,16 @@ const DeviceDetailsScreen = () => {
             bytes[i] = binaryString.charCodeAt(i);
           }
         } catch (e) {
+          console.error('Failed to decode value.data:', e);
           return;
         }
       }
     }
 
-    if (!bytes || bytes.length === 0) return;
+    if (!bytes || bytes.length === 0) {
+      console.log('No bytes to process');
+      return;
+    }
 
     const bytesToHexDisplay = bytesArray => {
       return Array.from(bytesArray)
@@ -105,26 +112,42 @@ const DeviceDetailsScreen = () => {
 
     if (type === 'config') {
       const hexDisplay = bytesToHexDisplay(bytes);
-      console.log('Received Value: ', hexDisplay);
+      console.log(`Received ${bytes.length} bytes of config data:`, hexDisplay);
 
       setConfigData(prev => {
         const newData = [{ timestamp: new Date(), data: hexDisplay }, ...prev];
         return newData.slice(0, 50);
       });
 
-      if (bytes.length === 119) {
+      // Check for 123 bytes (updated size including version fields)
+      if (bytes.length === 123) {
         try {
           const hexString = hexDisplay.replace(/ /g, '');
           const config = UserConfig.fromHex(hexString);
+
+          console.log('=== Parsed Configuration ===');
+          config.print();
+
           setParsedConfig(config);
           showToast(
             'success',
             'Config Updated',
-            'Configuration received from device',
+            `Configuration received - FW: ${UserConfig.formatVersionBCD(
+              config.fw_version,
+            )}, HW: ${UserConfig.formatVersionBCD(config.hw_version)}`,
           );
         } catch (parseError) {
           console.error('Parse error:', parseError);
+          showToast(
+            'error',
+            'Parse Error',
+            'Failed to parse configuration data',
+          );
         }
+      } else {
+        console.log(
+          `Expected 123 bytes, got ${bytes.length} bytes. Waiting for full config packet.`,
+        );
       }
     }
   }, []);
@@ -144,14 +167,16 @@ const DeviceDetailsScreen = () => {
             onPress={() => setShowDisconnectModal(true)}
             disabled={isDisconnecting}
             style={styles.headerButton}
+            activeOpacity={0.7}
           >
             {isDisconnecting ? (
               <ActivityIndicator size="small" color="#FF3B30" />
             ) : (
-              <>
-                <Icon name="exit-outline" size={20} color="#FF3B30" />
-                <Text style={styles.headerDisconnectText}>Disconnect</Text>
-              </>
+              <MaterialIcons
+                name="bluetooth-disabled"
+                size={24}
+                color="#FF3B30"
+              />
             )}
           </TouchableOpacity>
         ) : null,
@@ -171,7 +196,11 @@ const DeviceDetailsScreen = () => {
             <View style={styles.modalContent}>
               <View style={styles.modalIconContainer}>
                 <View style={styles.modalIconCircle}>
-                  <Icon name="warning" size={32} color="#FF3B30" />
+                  <MaterialIcons
+                    name="bluetooth-disabled"
+                    size={32}
+                    color="#FF3B30"
+                  />
                 </View>
               </View>
 
@@ -193,7 +222,11 @@ const DeviceDetailsScreen = () => {
                   style={[styles.modalButton, styles.disconnectButton]}
                   onPress={handleDisconnect}
                 >
-                  <Icon name="exit-outline" size={18} color="#FFFFFF" />
+                  <MaterialIcons
+                    name="bluetooth-disabled"
+                    size={18}
+                    color="#FFFFFF"
+                  />
                   <Text style={styles.disconnectButtonText}>Disconnect</Text>
                 </TouchableOpacity>
               </View>
@@ -218,17 +251,15 @@ const DeviceDetailsScreen = () => {
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
+      {/* Updated Header with Left and Right alignment */}
       <View style={styles.header}>
         <View style={styles.deviceInfoContainer}>
           <View style={styles.deviceAvatar}>
             <Icon name="hardware-chip" size={28} color="#007AFF" />
           </View>
-          <View style={styles.deviceInfo}>
-            <Text style={styles.deviceName}>
-              {deviceName || 'Unknown Device'}
-            </Text>
-            <Text style={styles.deviceId}>{deviceId.substring(0, 30)}...</Text>
-          </View>
+          <Text style={styles.deviceName}>
+            {deviceName || 'Unknown Device'}
+          </Text>
         </View>
 
         <View style={styles.statusContainer}>
@@ -243,47 +274,50 @@ const DeviceDetailsScreen = () => {
           </Text>
         </View>
       </View>
-
+      {/* Updated Centered Tabs */}
       <View style={styles.tabContainer}>
-        <TouchableOpacity
-          style={[
-            styles.tab,
-            activeTab === 'configuration' && styles.activeTab,
-          ]}
-          onPress={() => setActiveTab('configuration')}
-        >
-          <Icon
-            name="settings-outline"
-            size={18}
-            color={activeTab === 'configuration' ? '#007AFF' : '#8E9AAB'}
-          />
-          <Text
+        <View style={styles.tabsWrapper}>
+          <TouchableOpacity
             style={[
-              styles.tabText,
-              activeTab === 'configuration' && styles.activeTabText,
+              styles.tab,
+              activeTab === 'configuration' && styles.activeTab,
             ]}
+            onPress={() => setActiveTab('configuration')}
           >
-            Configuration
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'ota' && styles.activeTab]}
-          onPress={() => setActiveTab('ota')}
-        >
-          <Icon
-            name="cloud-upload-outline"
-            size={18}
-            color={activeTab === 'ota' ? '#007AFF' : '#8E9AAB'}
-          />
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === 'ota' && styles.activeTabText,
-            ]}
+            <Icon
+              name="settings-outline"
+              size={20}
+              color={activeTab === 'configuration' ? '#007AFF' : '#8E9AAB'}
+            />
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === 'configuration' && styles.activeTabText,
+              ]}
+            >
+              Configuration
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'ota' && styles.activeTab]}
+            onPress={() => setActiveTab('ota')}
           >
-            OTA Update
-          </Text>
-        </TouchableOpacity>
+            <Icon
+              name="cloud-upload-outline"
+              size={20}
+              color={activeTab === 'ota' ? '#007AFF' : '#8E9AAB'}
+            />
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === 'ota' && styles.activeTabText,
+              ]}
+            >
+              OTA Update
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -348,18 +382,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 12,
   },
-  deviceInfo: {
-    flex: 1,
-  },
   deviceName: {
     fontSize: 17,
     fontWeight: '600',
     color: '#1A2B4C',
-  },
-  deviceId: {
-    fontSize: 11,
-    color: '#8E9AAB',
-    marginTop: 2,
+    flex: 1,
   },
   statusContainer: {
     flexDirection: 'row',
@@ -385,32 +412,27 @@ const styles = StyleSheet.create({
     color: '#1A2B4C',
   },
   headerButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    gap: 6,
-  },
-  headerDisconnectText: {
-    color: '#FF3B30',
-    fontSize: 15,
-    fontWeight: '500',
+    padding: 8,
+    marginRight: 8,
   },
   tabContainer: {
-    flexDirection: 'row',
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 20,
-    paddingTop: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#E8ECF0',
+  },
+  tabsWrapper: {
+    flexDirection: 'row',
+    justifyContent: 'center', // Centers the tabs
+    alignItems: 'center',
+    paddingHorizontal: 20,
   },
   tab: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
-    paddingHorizontal: 20,
-    marginRight: 8,
-    gap: 6,
+    paddingHorizontal: 24, // Increased horizontal padding for better spacing
+    gap: 8,
+    marginHorizontal: 4,
   },
   activeTab: {
     borderBottomWidth: 2,

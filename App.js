@@ -29,21 +29,22 @@ const App = () => {
             },
             headerTintColor: '#007AFF',
             headerBackTitle: 'Back',
+            headerTitleAlign: 'center', // This centers the title
+            headerTitle: 'ADARKO Datalogger', // Default title for all screens
           }}
         >
           <Stack.Screen
             name="BLEScan"
             component={BLEScanScreen}
             options={{
-              title: 'BLE Scanner',
-              headerTitle: 'BLE Device Scanner',
+              title: 'ADARKO Datalogger',
             }}
           />
           <Stack.Screen
             name="DeviceDetails"
             component={DeviceDetailsScreen}
             options={{
-              title: 'Device Details',
+              title: 'ADARKO Datalogger',
             }}
           />
         </Stack.Navigator>

@@ -18,6 +18,8 @@ const ConfigurationTab = ({ characteristics, configData, parsedConfig }) => {
   const [serverPort, setServerPort] = useState('');
   const [sendIntervalMins, setSendIntervalMins] = useState('');
   const [eui64, setEui64] = useState('');
+  const [fwVersion, setFwVersion] = useState('');
+  const [hwVersion, setHwVersion] = useState('');
   const [isWriting, setIsWriting] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
 
@@ -37,6 +39,8 @@ const ConfigurationTab = ({ characteristics, configData, parsedConfig }) => {
       setServerPort('');
       setSendIntervalMins('');
       setEui64('');
+      setFwVersion('');
+      setHwVersion('');
       return;
     }
 
@@ -56,6 +60,40 @@ const ConfigurationTab = ({ characteristics, configData, parsedConfig }) => {
     setEui64(
       parsedConfig.eui64 ? UserConfig.formatHexArray(parsedConfig.eui64) : '',
     );
+
+    // Format firmware version - Using BCD format (02.00, 00.01, etc.)
+    if (
+      parsedConfig.fw_version !== undefined &&
+      parsedConfig.fw_version !== 0
+    ) {
+      const versionBCD = UserConfig.formatVersionBCD(parsedConfig.fw_version);
+      setFwVersion(versionBCD);
+      console.log(
+        `Firmware Version BCD: ${versionBCD} (0x${parsedConfig.fw_version
+          .toString(16)
+          .toUpperCase()
+          .padStart(4, '0')})`,
+      );
+    } else {
+      setFwVersion('00.00');
+    }
+
+    // Format hardware version - Using BCD format (02.00, 00.01, etc.)
+    if (
+      parsedConfig.hw_version !== undefined &&
+      parsedConfig.hw_version !== 0
+    ) {
+      const versionBCD = UserConfig.formatVersionBCD(parsedConfig.hw_version);
+      setHwVersion(versionBCD);
+      console.log(
+        `Hardware Version BCD: ${versionBCD} (0x${parsedConfig.hw_version
+          .toString(16)
+          .toUpperCase()
+          .padStart(4, '0')})`,
+      );
+    } else {
+      setHwVersion('00.00');
+    }
   }, [parsedConfig]);
 
   const bytesToBase64 = bytes => {
@@ -126,6 +164,8 @@ const ConfigurationTab = ({ characteristics, configData, parsedConfig }) => {
     config.send_interval_mins = interval;
     config.eui64 = parsedConfig.eui64 || new Uint8Array(8);
     config.ble_addr = parsedConfig.ble_addr || new Uint8Array(6);
+    config.fw_version = parsedConfig.fw_version || 0; // Preserve read from device
+    config.hw_version = parsedConfig.hw_version || 0; // Preserve read from device
 
     const hex = config.toHex();
     const bytes = UserConfig.hexToBytes(hex);
@@ -172,6 +212,38 @@ const ConfigurationTab = ({ characteristics, configData, parsedConfig }) => {
             <Text style={styles.disabledInputText}>
               {eui64 || 'Waiting for config...'}
             </Text>
+          </View>
+        </View>
+
+        <View style={styles.infoRow}>
+          <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+            <Text style={styles.label}>
+              Firmware Version{' '}
+              <Text style={styles.readOnlyBadge}>(Read-Only)</Text>
+            </Text>
+            <View
+              style={[styles.input, styles.disabledInput, styles.versionInput]}
+            >
+              <Icon name="hardware-chip-outline" size={16} color="#007AFF" />
+              <Text style={[styles.disabledInputText, styles.versionText]}>
+                {fwVersion}
+              </Text>
+            </View>
+          </View>
+
+          <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
+            <Text style={styles.label}>
+              Hardware Version{' '}
+              <Text style={styles.readOnlyBadge}>(Read-Only)</Text>
+            </Text>
+            <View
+              style={[styles.input, styles.disabledInput, styles.versionInput]}
+            >
+              <Icon name="build-outline" size={16} color="#007AFF" />
+              <Text style={[styles.disabledInputText, styles.versionText]}>
+                {hwVersion}
+              </Text>
+            </View>
           </View>
         </View>
 
@@ -358,6 +430,21 @@ const styles = StyleSheet.create({
   disabledInputText: {
     fontSize: 14,
     color: '#8E9AAB',
+  },
+  versionText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#007AFF',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  versionInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    marginBottom: 14,
   },
   row: {
     flexDirection: 'row',
