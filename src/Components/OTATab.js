@@ -407,9 +407,11 @@ const OTATab = ({ characteristics }) => {
         </Text>
       </View>
 
+      {/* Combined Single Card Section */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Firmware File</Text>
+        <Text style={styles.sectionTitle}>Firmware Update</Text>
 
+        {/* File Selection */}
         <TouchableOpacity
           style={[styles.selectButton, isUploading && styles.disabledButton]}
           onPress={handleFileChange}
@@ -493,10 +495,12 @@ const OTATab = ({ characteristics }) => {
             )}
           </View>
         )}
-      </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>OTA Process</Text>
+        {/* Divider */}
+        <View style={styles.divider} />
+
+        {/* OTA Process Steps - Reduced Font Size */}
+        <Text style={styles.processTitle}>OTA Process</Text>
         <View style={styles.stepsContainer}>
           <View style={styles.stepItem}>
             <View style={styles.stepNumber}>
@@ -570,7 +574,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#FFFFFF',
     opacity: 0.9,
-    marginBottom: 16,
     lineHeight: 18,
   },
   infoRow: {
@@ -610,7 +613,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#5856D6',
+    backgroundColor: '#007AFF',
     paddingVertical: 14,
     borderRadius: 12,
     gap: 8,
@@ -697,15 +700,26 @@ const styles = StyleSheet.create({
   progressText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#007AFF',
+    color: '#007bff',
   },
   progressDetail: {
     fontSize: 12,
     color: '#8E9AAB',
     marginTop: 8,
   },
+  divider: {
+    height: 1,
+    backgroundColor: '#E8ECF0',
+    marginVertical: 20,
+  },
+  processTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1A2B4C',
+    marginBottom: 12,
+  },
   stepsContainer: {
-    gap: 12,
+    gap: 10,
   },
   stepItem: {
     flexDirection: 'row',
@@ -713,20 +727,20 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   stepNumber: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#007AFF',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#238dffaf',
     alignItems: 'center',
     justifyContent: 'center',
   },
   stepNumberText: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
   },
   stepText: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#1A2B4C',
     flex: 1,
   },

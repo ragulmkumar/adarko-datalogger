@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -21,20 +21,83 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import BluetoothManager from '../../BluetoothManager';
 import { showToast } from '../utils/ShowToast';
 
+const ScanControlBar = ({
+  devices,
+  isScanning,
+  permissionsGranted,
+  bluetoothReady,
+  startScan,
+  stopScan,
+}) => (
+  <View style={styles.controlBar}>
+    <View style={styles.deviceCountContainer}>
+      <Icon name="file-tray-full" size={20} color="#6B7A8F" />
+      <Text style={styles.deviceCountText}>
+        {Object.keys(devices).length} Devices Found
+      </Text>
+    </View>
+    <TouchableOpacity
+      style={[
+        styles.actionButton,
+        isScanning && styles.stopButton,
+        (!permissionsGranted || !bluetoothReady) && styles.disabledButton,
+      ]}
+      onPress={isScanning ? stopScan : startScan}
+      disabled={!permissionsGranted || !bluetoothReady}
+    >
+      <Icon
+        name={isScanning ? 'stop-circle' : 'search'}
+        size={20}
+        color="#FFFFFF"
+      />
+      <Text style={styles.actionButtonText}>
+        {isScanning ? 'Stop Scanning' : 'Start Scanning'}
+      </Text>
+    </TouchableOpacity>
+  </View>
+);
+
+const FloatingScanButton = ({
+  isScanning,
+  permissionsGranted,
+  bluetoothReady,
+  startScan,
+  stopScan,
+}) => (
+  <TouchableOpacity
+    style={[
+      styles.floatingButton,
+      isScanning && styles.scanningButton,
+      (!permissionsGranted || !bluetoothReady) && styles.disabledButton,
+    ]}
+    onPress={isScanning ? stopScan : startScan}
+    disabled={!permissionsGranted || !bluetoothReady}
+  >
+    {isScanning ? (
+      <ActivityIndicator color="#FFFFFF" size={24} />
+    ) : (
+      <Icon name="bluetooth" size={28} color="#FFFFFF" />
+    )}
+  </TouchableOpacity>
+);
+
 const BLEScanScreen = () => {
   const [devices, setDevices] = useState({});
   const [isScanning, setIsScanning] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [permissionsGranted, setPermissionsGranted] = useState(false);
+  const [requestingPermissions, setRequestingPermissions] = useState(false);
   const [bluetoothReady, setBluetoothReady] = useState(false);
+  const [initializing, setInitializing] = useState(true);
   const navigation = useNavigation();
   const route = useRoute();
   const scanTimeoutRef = useRef(null);
   const bluetoothManager = useRef(null);
 
-  const requestBluetoothPermissions = async () => {
+  const requestBluetoothPermissions = useCallback(async () => {
     if (Platform.OS === 'android') {
       try {
+        setRequestingPermissions(true);
         let granted = false;
         if (Platform.Version >= 31) {
           const permissions = await PermissionsAndroid.requestMultiple([
@@ -56,17 +119,20 @@ const BLEScanScreen = () => {
           granted = result === PermissionsAndroid.RESULTS.GRANTED;
         }
         setPermissionsGranted(granted);
+        setRequestingPermissions(false);
         return granted;
       } catch (err) {
+        setRequestingPermissions(false);
         return false;
       }
     }
     setPermissionsGranted(true);
     return true;
-  };
+  }, []);
 
-  const initBluetooth = async () => {
+  const initBluetooth = useCallback(async () => {
     try {
+      setInitializing(true);
       const hasPermission = await requestBluetoothPermissions();
       if (!hasPermission) {
         showToast(
@@ -74,26 +140,37 @@ const BLEScanScreen = () => {
           'Permission Denied',
           'Bluetooth permissions are required',
         );
+        setInitializing(false);
         return false;
       }
       bluetoothManager.current = BluetoothManager.getInstance();
       setBluetoothReady(true);
+      setInitializing(false);
       return true;
     } catch (error) {
       showToast('error', 'Error', 'Failed to initialize Bluetooth');
+      setInitializing(false);
       return false;
     }
-  };
+  }, [requestBluetoothPermissions]);
 
   useEffect(() => {
-    initBluetooth();
+    const autoInit = async () => {
+      const initialized = await initBluetooth();
+      if (initialized) {
+        // Optionally auto-start scan after initialization
+      }
+    };
+
+    autoInit();
+
     return () => {
       stopScan();
       if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Check for success toast parameter
   useEffect(() => {
     if (route.params?.showSuccessToast) {
       showToast(
@@ -101,7 +178,6 @@ const BLEScanScreen = () => {
         'OTA Complete',
         'Firmware update completed successfully!',
       );
-      // Clear the parameter to prevent showing toast again
       navigation.setParams({ showSuccessToast: undefined });
     }
   }, [route.params?.showSuccessToast, navigation]);
@@ -116,10 +192,16 @@ const BLEScanScreen = () => {
 
   const startScan = async () => {
     if (!bluetoothReady || !bluetoothManager.current) {
-      showToast('error', 'Error', 'Bluetooth not ready, please try again');
-      const initialized = await initBluetooth();
-      if (!initialized) return;
+      showToast(
+        'error',
+        'Error',
+        'Bluetooth not ready. Please initialize Bluetooth first.',
+      );
+      return;
     }
+
+    // SILENT filter - only shows devices starting with "DL" but never mentions it in UI
+    const filterPrefix = 'DL';
 
     setDevices({});
     setIsScanning(true);
@@ -136,6 +218,12 @@ const BLEScanScreen = () => {
       manager.startScan(
         device => {
           if (device && device.name) {
+            const deviceName = device.name.trim();
+            // SILENT filter - no UI mention of DL
+            if (!deviceName.toUpperCase().startsWith(filterPrefix)) {
+              return;
+            }
+
             setDevices(prevDevices => {
               const existingDevice = prevDevices[device.id];
               if (!existingDevice || existingDevice.rssi !== device.rssi) {
@@ -143,9 +231,8 @@ const BLEScanScreen = () => {
                   ...prevDevices,
                   [device.id]: {
                     id: device.id,
-                    name: device.name || 'Unknown Device',
+                    name: deviceName,
                     rssi: device.rssi || -100,
-                    localName: device.localName,
                   },
                 };
               }
@@ -205,16 +292,10 @@ const BLEScanScreen = () => {
     });
   };
 
-  const getSignalStrength = rssi => {
-    if (rssi > -60) return { text: 'Excellent', color: '#34C759', bars: 4 };
-    if (rssi > -70) return { text: 'Good', color: '#FFD60A', bars: 3 };
-    if (rssi > -80) return { text: 'Fair', color: '#FF9500', bars: 2 };
-    return { text: 'Poor', color: '#FF3B30', bars: 1 };
-  };
+  // Static color
+  const staticColor = '#007AFF';
 
   const renderDevice = ({ item }) => {
-    const signal = getSignalStrength(item.rssi);
-
     return (
       <TouchableOpacity
         style={styles.deviceCard}
@@ -222,8 +303,10 @@ const BLEScanScreen = () => {
         activeOpacity={0.7}
       >
         <View style={styles.deviceIconContainer}>
-          <View style={styles.deviceIcon}>
-            <Icon name="bluetooth" size={28} color="#007AFF" />
+          <View
+            style={[styles.deviceIcon, { backgroundColor: `${staticColor}15` }]}
+          >
+            <Icon name="bluetooth" size={28} color={staticColor} />
           </View>
         </View>
 
@@ -235,27 +318,18 @@ const BLEScanScreen = () => {
             {item.id.substring(0, 20)}...
           </Text>
           <View style={styles.signalContainer}>
-            <View style={styles.signalBars}>
-              {[1, 2, 3, 4].map(bar => (
-                <View
-                  key={bar}
-                  style={[
-                    styles.signalBar,
-                    { height: 4 + bar * 2 },
-                    bar <= signal.bars && { backgroundColor: signal.color },
-                    bar > signal.bars && { backgroundColor: '#ddd' },
-                  ]}
-                />
-              ))}
-            </View>
-            <Text style={[styles.signalText, { color: signal.color }]}>
-              {signal.text} ({item.rssi} dBm)
-            </Text>
+            <Text style={styles.rssiText}>RSSI: {item.rssi} dBm</Text>
           </View>
         </View>
 
-        <View style={styles.connectButton}>
+        <View style={[styles.connectButton, { backgroundColor: staticColor }]}>
           <Text style={styles.connectButtonText}>Connect</Text>
+          <Icon
+            name="arrow-forward"
+            size={16}
+            color="#FFFFFF"
+            style={styles.connectIcon}
+          />
         </View>
       </TouchableOpacity>
     );
@@ -264,7 +338,7 @@ const BLEScanScreen = () => {
   const renderEmptyState = () => (
     <View style={styles.emptyContainer}>
       <View style={styles.emptyIconContainer}>
-        <Icon name="search" size={48} color="#007AFF" />
+        <Icon name="bluetooth" size={48} color="#007AFF" />
       </View>
       <Text style={styles.emptyTitle}>
         {isScanning ? 'Scanning for devices...' : 'No Devices Found'}
@@ -272,82 +346,91 @@ const BLEScanScreen = () => {
       <Text style={styles.emptySubtitle}>
         {isScanning
           ? 'Looking for nearby BLE devices'
-          : 'Tap Start Scan to search for devices'}
+          : 'No compatible devices found nearby'}
       </Text>
       {!isScanning && !bluetoothReady && (
         <TouchableOpacity
           style={styles.emptyScanButton}
           onPress={initBluetooth}
         >
+          <Icon name="bluetooth" size={20} color="#FFFFFF" />
           <Text style={styles.emptyScanButtonText}>Initialize Bluetooth</Text>
         </TouchableOpacity>
       )}
       {!isScanning && bluetoothReady && (
         <TouchableOpacity style={styles.emptyScanButton} onPress={startScan}>
+          <Icon name="search" size={20} color="#FFFFFF" />
           <Text style={styles.emptyScanButtonText}>Start Scan</Text>
         </TouchableOpacity>
       )}
       {isScanning && (
-        <ActivityIndicator
-          size="large"
-          color="#007AFF"
-          style={{ marginTop: 20 }}
-        />
+        <>
+          <ActivityIndicator
+            size="large"
+            color="#007AFF"
+            style={{ marginTop: 20 }}
+          />
+          <Text style={styles.scanningText}>Scanning nearby devices...</Text>
+        </>
       )}
     </View>
   );
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <StatusBar
+        barStyle={requestingPermissions ? 'light-content' : 'dark-content'}
+        backgroundColor={requestingPermissions ? '#000000' : '#F5F7FA'}
+      />
 
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>BLE Device Scanner</Text>
-          <Text style={styles.headerSubtitle}>
-            {Object.keys(devices).length} device
-            {Object.keys(devices).length !== 1 ? 's' : ''} found
-          </Text>
-        </View>
+      <View style={styles.mainContainer}>
+        {initializing ? (
+          <View style={styles.loadingContainer}>
+            <View style={styles.loadingCard}>
+              <ActivityIndicator size="large" color="#007AFF" />
+              <Text style={styles.loadingText}>Initializing Bluetooth...</Text>
+              <Text style={styles.loadingSubtext}>
+                Please wait while we set up Bluetooth
+              </Text>
+            </View>
+          </View>
+        ) : (
+          <>
+            <ScanControlBar
+              devices={devices}
+              isScanning={isScanning}
+              permissionsGranted={permissionsGranted}
+              bluetoothReady={bluetoothReady}
+              startScan={startScan}
+              stopScan={stopScan}
+            />
 
-        <TouchableOpacity
-          style={[
-            styles.scanButton,
-            isScanning && styles.scanningButton,
-            (!permissionsGranted || !bluetoothReady) && styles.disabledButton,
-          ]}
-          onPress={isScanning ? stopScan : startScan}
-          disabled={!permissionsGranted || !bluetoothReady}
-        >
-          {isScanning ? (
-            <>
-              <ActivityIndicator color="#FFFFFF" size="small" />
-              <Text style={styles.scanButtonText}>Stop</Text>
-            </>
-          ) : (
-            <>
-              <Icon name="scan" size={18} color="#FFFFFF" />
-              <Text style={styles.scanButtonText}>Scan</Text>
-            </>
-          )}
-        </TouchableOpacity>
+            <FlatList
+              data={Object.values(devices).sort((a, b) => b.rssi - a.rssi)}
+              keyExtractor={item => item.id}
+              renderItem={renderDevice}
+              ListEmptyComponent={renderEmptyState}
+              contentContainerStyle={styles.listContainer}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={onRefresh}
+                  tintColor="#007AFF"
+                  colors={['#007AFF']}
+                />
+              }
+              showsVerticalScrollIndicator={false}
+            />
+          </>
+        )}
       </View>
 
-      <FlatList
-        data={Object.values(devices).sort((a, b) => b.rssi - a.rssi)}
-        keyExtractor={item => item.id}
-        renderItem={renderDevice}
-        ListEmptyComponent={renderEmptyState}
-        contentContainerStyle={styles.listContainer}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor="#007AFF"
-            colors={['#007AFF']}
-          />
-        }
-        showsVerticalScrollIndicator={false}
+      <FloatingScanButton
+        isScanning={isScanning}
+        permissionsGranted={permissionsGranted}
+        bluetoothReady={bluetoothReady}
+        startScan={startScan}
+        stopScan={stopScan}
       />
     </SafeAreaView>
   );
@@ -358,7 +441,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F5F7FA',
   },
-  header: {
+  mainContainer: {
+    flex: 1,
+  },
+  controlBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -367,18 +453,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E8ECF0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: '700',
+  deviceCountContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  deviceCountText: {
+    fontSize: 15,
+    fontWeight: '600',
     color: '#1A2B4C',
   },
-  headerSubtitle: {
-    fontSize: 13,
-    color: '#6B7A8F',
-    marginTop: 2,
-  },
-  scanButton: {
+  actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#007AFF',
@@ -386,17 +477,43 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 25,
     gap: 8,
+    shadowColor: '#007AFF',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  stopButton: {
+    backgroundColor: '#FF3B30',
+    shadowColor: '#FF3B30',
+  },
+  actionButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  floatingButton: {
+    position: 'absolute',
+    bottom: 30,
+    right: 20,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#007AFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 8,
   },
   scanningButton: {
     backgroundColor: '#FF3B30',
   },
   disabledButton: {
     backgroundColor: '#C0C8D2',
-  },
-  scanButtonText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '600',
+    shadowOpacity: 0,
   },
   listContainer: {
     flexGrow: 1,
@@ -406,7 +523,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 16,
     marginBottom: 12,
     shadowColor: '#000',
@@ -416,13 +533,12 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   deviceIconContainer: {
-    marginRight: 14,
+    marginRight: 16,
   },
   deviceIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: '#F0F4FF',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -431,43 +547,45 @@ const styles = StyleSheet.create({
   },
   deviceName: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#1A2B4C',
     marginBottom: 4,
   },
   deviceId: {
     fontSize: 11,
     color: '#8E9AAB',
-    marginBottom: 6,
+    marginBottom: 8,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
   signalContainer: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  signalBars: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 3,
-    marginRight: 8,
-  },
-  signalBar: {
-    width: 4,
-    borderRadius: 2,
-  },
-  signalText: {
+  rssiText: {
     fontSize: 11,
+    color: '#6B7A8F',
     fontWeight: '500',
   },
   connectButton: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 25,
+    gap: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   connectButtonText: {
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '600',
+  },
+  connectIcon: {
+    marginLeft: 2,
   },
   emptyContainer: {
     alignItems: 'center',
@@ -476,36 +594,81 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
   },
   emptyIconContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: '#F0F4FF',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(0, 122, 255, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 24,
   },
   emptyTitle: {
-    fontSize: 20,
-    fontWeight: '600',
+    fontSize: 22,
+    fontWeight: '700',
     color: '#1A2B4C',
     marginBottom: 8,
   },
   emptySubtitle: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#8E9AAB',
     textAlign: 'center',
-    marginBottom: 24,
+    marginBottom: 32,
+    lineHeight: 22,
   },
   emptyScanButton: {
+    flexDirection: 'row',
     backgroundColor: '#007AFF',
-    paddingHorizontal: 32,
-    paddingVertical: 12,
-    borderRadius: 25,
+    paddingHorizontal: 28,
+    paddingVertical: 14,
+    borderRadius: 30,
+    alignItems: 'center',
+    gap: 10,
+    shadowColor: '#007AFF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
   emptyScanButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  scanningText: {
+    marginTop: 16,
+    fontSize: 14,
+    color: '#6B7A8F',
+    fontWeight: '500',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F5F7FA',
+  },
+  loadingCard: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    padding: 32,
+    borderRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 5,
+    marginHorizontal: 32,
+  },
+  loadingText: {
+    marginTop: 20,
+    fontSize: 18,
+    color: '#1A2B4C',
+    fontWeight: '700',
+  },
+  loadingSubtext: {
+    marginTop: 8,
+    fontSize: 13,
+    color: '#8E9AAB',
+    textAlign: 'center',
   },
 });
 

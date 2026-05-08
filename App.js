@@ -1,19 +1,14 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import Toast from 'react-native-toast-message';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import BLEScanScreen from './src/Screens/BLEScanScreen';
 import DeviceDetailsScreen from './src/Screens/DeviceDetailsScreen';
-import { requestPermissions } from './src/utils/Permissions';
 
 const Stack = createNativeStackNavigator();
 
 const App = () => {
-  useEffect(() => {
-    requestPermissions();
-  }, []);
-
   return (
     <SafeAreaProvider>
       <NavigationContainer>

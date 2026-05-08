@@ -3,15 +3,15 @@ import BluetoothManager from '../../BluetoothManager';
 import { showToast } from './ShowToast';
 
 // UUIDs for services and characteristics
-const CONFIG_SERVICE_UUID = '0000fe40-cc7a-482a-984a-7f2ed5b3e58f';
-const CONFIG_WRITE_CHAR_UUID = '0000fe41-8e22-4541-9d4c-21edae82ed19';
-const CONFIG_NOTIFY_CHAR_UUID = '0000fe42-8e22-4541-9d4c-21edae82ed19';
+const CONFIG_SERVICE_UUID = '0000ad40-cc7a-482a-984a-7f2ed5b3e58f';
+const CONFIG_WRITE_CHAR_UUID = '0000ad41-8e22-4541-9d4c-21edae82ed19';
+const CONFIG_NOTIFY_CHAR_UUID = '0000ad42-8e22-4541-9d4c-21edae82ed19';
 
 // OTA UUIDs
-const OTA_SERVICE_UUID = '0000fe20-cc7a-482a-984a-7f2ed5b3e58f';
-const OTA_BASE_CHAR_UUID = '0000fe22-8e22-4541-9d4c-21edae82ed19'; // Write address characteristic
-const OTA_CFM_CHAR_UUID = '0000fe23-8e22-4541-9d4c-21edae82ed19'; // Indicate/Notify characteristic
-const OTA_DATA_CHAR_UUID = '0000fe24-8e22-4541-9d4c-21edae82ed19'; // Write without response characteristic
+const OTA_SERVICE_UUID = '0000ad20-cc7a-482a-984a-7f2ed5b3e58f';
+const OTA_BASE_CHAR_UUID = '0000ad22-8e22-4541-9d4c-21edae82ed19'; // Write address characteristic
+const OTA_CFM_CHAR_UUID = '0000ad23-8e22-4541-9d4c-21edae82ed19'; // Indicate/Notify characteristic
+const OTA_DATA_CHAR_UUID = '0000ad24-8e22-4541-9d4c-21edae82ed19'; // Write without response characteristic
 
 export const useBluetoothCharacteristics = (
   deviceId,

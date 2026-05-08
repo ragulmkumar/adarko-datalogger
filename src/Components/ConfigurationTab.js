@@ -7,10 +7,15 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   ScrollView,
+  Platform,
+  Modal,
+  Dimensions,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import UserConfig from '../utils/ParseConfig';
 import { showToast } from '../utils/ShowToast';
+
+const { height: screenHeight } = Dimensions.get('window');
 
 const ConfigurationTab = ({ characteristics, configData, parsedConfig }) => {
   const [apn, setApn] = useState('');
@@ -22,6 +27,13 @@ const ConfigurationTab = ({ characteristics, configData, parsedConfig }) => {
   const [hwVersion, setHwVersion] = useState('');
   const [isWriting, setIsWriting] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [dropdownPosition, setDropdownPosition] = useState({
+    top: 0,
+    left: 0,
+    width: 0,
+  });
+  const dropdownButtonRef = useRef(null);
+  const scrollViewRef = useRef(null);
 
   // Dropdown options: value in hours, label for display
   const intervalOptions = [
@@ -107,6 +119,26 @@ const ConfigurationTab = ({ characteristics, configData, parsedConfig }) => {
   const handleSelectInterval = option => {
     setSendIntervalMins(option.label);
     setShowDropdown(false);
+  };
+
+  const measureDropdownButton = () => {
+    if (dropdownButtonRef.current) {
+      dropdownButtonRef.current.measure((fx, fy, width, height, px, py) => {
+        const isNearBottom = py + height + 250 > screenHeight;
+        setDropdownPosition({
+          top: isNearBottom ? py - 250 : py + height + 4,
+          left: px,
+          width: width,
+        });
+      });
+    }
+  };
+
+  const toggleDropdown = () => {
+    if (!showDropdown) {
+      measureDropdownButton();
+    }
+    setShowDropdown(!showDropdown);
   };
 
   const handleWriteConfig = async () => {
@@ -196,14 +228,18 @@ const ConfigurationTab = ({ characteristics, configData, parsedConfig }) => {
       style={styles.container}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
+      ref={scrollViewRef}
     >
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Device Configuration</Text>
-        <Text style={styles.sectionSubtitle}>
+      <View style={styles.infoCard}>
+        <Icon name="settings-outline" size={24} color="#FFFFFF" />
+        <Text style={styles.infoTitle}>Device Configuration</Text>
+        <Text style={styles.infoText}>
           Edit the configuration parameters below and click Write to save to
           device
         </Text>
+      </View>
 
+      <View style={styles.section}>
         <View style={styles.inputGroup}>
           <Text style={styles.label}>
             EUI-64 <Text style={styles.readOnlyBadge}>(Read-Only)</Text>
@@ -285,65 +321,27 @@ const ConfigurationTab = ({ characteristics, configData, parsedConfig }) => {
 
           <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
             <Text style={styles.label}>Send Interval</Text>
-            <View style={styles.dropdownContainer}>
-              <TouchableOpacity
-                style={styles.dropdownButton}
-                onPress={() => setShowDropdown(!showDropdown)}
-                activeOpacity={0.7}
+            <TouchableOpacity
+              ref={dropdownButtonRef}
+              style={styles.dropdownButton}
+              onPress={toggleDropdown}
+              activeOpacity={0.7}
+            >
+              <Text
+                style={
+                  sendIntervalMins
+                    ? styles.dropdownText
+                    : styles.placeholderText
+                }
               >
-                <Text
-                  style={
-                    sendIntervalMins
-                      ? styles.dropdownText
-                      : styles.placeholderText
-                  }
-                >
-                  {sendIntervalMins || 'Select interval'}
-                </Text>
-                <Icon
-                  name={showDropdown ? 'chevron-up' : 'chevron-down'}
-                  size={18}
-                  color="#8E9AAB"
-                />
-              </TouchableOpacity>
-
-              {showDropdown && (
-                <View style={styles.dropdownList}>
-                  <ScrollView
-                    style={styles.dropdownScroll}
-                    showsVerticalScrollIndicator={false}
-                    nestedScrollEnabled={true}
-                  >
-                    {intervalOptions.map((option, index) => (
-                      <TouchableOpacity
-                        key={index}
-                        style={[
-                          styles.dropdownItem,
-                          sendIntervalMins === option.label &&
-                            styles.selectedDropdownItem,
-                          index === intervalOptions.length - 1 &&
-                            styles.lastDropdownItem,
-                        ]}
-                        onPress={() => handleSelectInterval(option)}
-                      >
-                        <Text
-                          style={[
-                            styles.dropdownItemText,
-                            sendIntervalMins === option.label &&
-                              styles.selectedDropdownItemText,
-                          ]}
-                        >
-                          {option.label}
-                        </Text>
-                        {sendIntervalMins === option.label && (
-                          <Icon name="checkmark" size={16} color="#007AFF" />
-                        )}
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-              )}
-            </View>
+                {sendIntervalMins || 'Select interval'}
+              </Text>
+              <Icon
+                name={showDropdown ? 'chevron-up' : 'chevron-down'}
+                size={18}
+                color="#8E9AAB"
+              />
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -366,6 +364,72 @@ const ConfigurationTab = ({ characteristics, configData, parsedConfig }) => {
           )}
         </TouchableOpacity>
       </View>
+
+      <View style={styles.footerInfo}>
+        <Icon name="information-circle-outline" size={20} color="#8E9AAB" />
+        <Text style={styles.footerText}>
+          Configuration will be saved to device memory
+        </Text>
+      </View>
+
+      {/* Modal-based dropdown for better positioning */}
+      <Modal
+        visible={showDropdown}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowDropdown(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowDropdown(false)}
+        >
+          <View
+            style={[
+              styles.dropdownList,
+              {
+                position: 'absolute',
+                top: dropdownPosition.top,
+                left: dropdownPosition.left,
+                width: dropdownPosition.width || 200,
+              },
+            ]}
+          >
+            <ScrollView
+              style={styles.dropdownScroll}
+              showsVerticalScrollIndicator={false}
+              nestedScrollEnabled={true}
+            >
+              {intervalOptions.map((option, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={[
+                    styles.dropdownItem,
+                    sendIntervalMins === option.label &&
+                      styles.selectedDropdownItem,
+                    index === intervalOptions.length - 1 &&
+                      styles.lastDropdownItem,
+                  ]}
+                  onPress={() => handleSelectInterval(option)}
+                >
+                  <Text
+                    style={[
+                      styles.dropdownItemText,
+                      sendIntervalMins === option.label &&
+                        styles.selectedDropdownItemText,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                  {sendIntervalMins === option.label && (
+                    <Icon name="checkmark" size={16} color="#007AFF" />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </ScrollView>
   );
 };
@@ -375,50 +439,57 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
   },
+  infoCard: {
+    backgroundColor: '#007AFF',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+  },
+  infoTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  infoText: {
+    fontSize: 13,
+    color: '#FFFFFF',
+    opacity: 0.9,
+    lineHeight: 18,
+  },
   section: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 16,
+    borderRadius: 16,
+    padding: 20,
     marginBottom: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
+    shadowOpacity: 0.05,
     shadowRadius: 8,
     elevation: 2,
   },
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: '#1A2B4C',
-    marginBottom: 4,
-  },
-  sectionSubtitle: {
-    fontSize: 12,
-    color: '#8E9AAB',
-    marginBottom: 18,
-    lineHeight: 16,
-  },
   inputGroup: {
-    marginBottom: 14,
+    marginBottom: 16,
   },
   label: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
     color: '#1A2B4C',
-    marginBottom: 6,
+    marginBottom: 8,
     letterSpacing: 0.3,
   },
   readOnlyBadge: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '400',
     color: '#8E9AAB',
   },
   input: {
     borderWidth: 1,
     borderColor: '#E2E6EA',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     fontSize: 14,
     color: '#1A2B4C',
     backgroundColor: '#FFFFFF',
@@ -444,15 +515,11 @@ const styles = StyleSheet.create({
   },
   infoRow: {
     flexDirection: 'row',
-    marginBottom: 14,
+    marginBottom: 16,
   },
   row: {
     flexDirection: 'row',
     gap: 12,
-  },
-  dropdownContainer: {
-    position: 'relative',
-    zIndex: 100,
   },
   dropdownButton: {
     flexDirection: 'row',
@@ -460,9 +527,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     borderWidth: 1,
     borderColor: '#E2E6EA',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     backgroundColor: '#FFFFFF',
   },
   dropdownText: {
@@ -473,14 +540,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#C0C8D2',
   },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
   dropdownList: {
-    position: 'absolute',
-    top: '100%',
-    left: 0,
-    right: 0,
-    marginTop: 4,
     backgroundColor: '#FFFFFF',
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#E2E6EA',
     shadowColor: '#000',
@@ -498,8 +564,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#F0F2F5',
   },
@@ -522,9 +588,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#007AFF',
-    paddingVertical: 12,
-    borderRadius: 10,
-    marginTop: 16,
+    paddingVertical: 14,
+    borderRadius: 12,
+    marginTop: 8,
     gap: 8,
   },
   disabledButton: {
@@ -534,6 +600,21 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '600',
+  },
+  footerInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8F9FC',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 24,
+    gap: 10,
+  },
+  footerText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#8E9AAB',
+    lineHeight: 16,
   },
 });
 
