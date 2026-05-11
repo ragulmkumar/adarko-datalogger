@@ -1,9 +1,11 @@
 import { BleManager } from 'react-native-ble-plx';
+import { Linking, Platform, NativeModules } from 'react-native';
 
 class BluetoothManager {
   constructor() {
     this.manager = null;
     this.isInitialized = false;
+    this.stateChangeListener = null;
   }
 
   static instance = null;
@@ -30,6 +32,102 @@ class BluetoothManager {
         BluetoothManager.instance.manager.destroy();
       }
       BluetoothManager.instance = null;
+    }
+  }
+
+  async getBluetoothState() {
+    if (!this.manager || !this.isInitialized) {
+      this.initialize();
+    }
+
+    try {
+      const state = await this.manager.state();
+      console.log('Current Bluetooth state:', state);
+      return state;
+    } catch (error) {
+      console.error('Error getting Bluetooth state:', error);
+      return 'Unknown';
+    }
+  }
+
+  monitorBluetoothState(callback) {
+    if (!this.manager || !this.isInitialized) {
+      this.initialize();
+    }
+
+    if (!this.manager) {
+      console.error('BluetoothManager not initialized');
+      return;
+    }
+
+    console.log('Monitoring Bluetooth state changes...');
+    this.stateChangeListener = this.manager.onStateChange(state => {
+      console.log('Bluetooth state changed to:', state);
+      if (callback) callback(state);
+    }, true);
+  }
+
+  stopMonitoringBluetoothState() {
+    if (this.stateChangeListener) {
+      this.stateChangeListener.remove();
+      this.stateChangeListener = null;
+      console.log('Stopped monitoring Bluetooth state');
+    }
+  }
+
+  async openBluetoothSettings() {
+    try {
+      if (Platform.OS === 'android') {
+        // Android: Try using native module first (most reliable)
+        try {
+          if (NativeModules.BluetoothModule?.openSettings) {
+            await NativeModules.BluetoothModule.openSettings();
+            return;
+          }
+        } catch (nativeError) {
+          console.log('Native module not available, using Linking fallbacks');
+        }
+
+        // Fallback 1: Try android-settings scheme
+        try {
+          console.log('Attempt 1: Opening with android-settings scheme...');
+          await Linking.openURL('android-settings://Bluetooth');
+          return;
+        } catch (error1) {
+          console.error('Attempt 1 failed:', error1);
+        }
+
+        // Fallback 2: Try Settings app via component name
+        try {
+          console.log('Attempt 2: Opening Settings app Bluetooth activity...');
+          const intentUrl =
+            'intent://action/android.settings.BLUETOOTH_SETTINGS#Intent;scheme=;end';
+          await Linking.openURL(intentUrl);
+          return;
+        } catch (error2) {
+          console.error('Attempt 2 failed:', error2);
+        }
+
+        // Fallback 3: Try generic Settings app
+        try {
+          console.log('Attempt 3: Opening generic Settings app...');
+          const intentUrl =
+            'intent://action/android.intent.action.MAIN?component=com.android.settings/.Settings#Intent;scheme=;end';
+          await Linking.openURL(intentUrl);
+          return;
+        } catch (error3) {
+          console.error('Attempt 3 failed:', error3);
+          throw new Error(
+            'Could not open Bluetooth settings. Please enable Bluetooth manually through your device settings.',
+          );
+        }
+      } else if (Platform.OS === 'ios') {
+        // iOS: Open Settings app (iOS doesn't allow direct Bluetooth toggle)
+        await Linking.openURL('app-settings:');
+      }
+    } catch (error) {
+      console.error('Error opening Bluetooth settings:', error);
+      throw error;
     }
   }
 
@@ -94,7 +192,6 @@ class BluetoothManager {
           return;
         }
         if (device && device.name) {
-          console.log('Device found:', device.name, device.id);
           onDeviceFound(device);
         }
       },

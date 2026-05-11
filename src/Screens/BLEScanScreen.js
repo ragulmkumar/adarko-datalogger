@@ -10,6 +10,7 @@ import {
   StatusBar,
   Platform,
   PermissionsAndroid,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -89,6 +90,8 @@ const BLEScanScreen = () => {
   const [requestingPermissions, setRequestingPermissions] = useState(false);
   const [bluetoothReady, setBluetoothReady] = useState(false);
   const [initializing, setInitializing] = useState(true);
+  const [bluetoothStatus, setBluetoothStatus] = useState('Unknown');
+  const [showBluetoothOffModal, setShowBluetoothOffModal] = useState(false);
   const navigation = useNavigation();
   const route = useRoute();
   const scanTimeoutRef = useRef(null);
@@ -144,7 +147,39 @@ const BLEScanScreen = () => {
         return false;
       }
       bluetoothManager.current = BluetoothManager.getInstance();
-      setBluetoothReady(true);
+
+      // Check Bluetooth state and start monitoring
+      const currentState = await bluetoothManager.current.getBluetoothState();
+      setBluetoothStatus(currentState);
+
+      // Show modal if Bluetooth is off
+      if (currentState === 'PoweredOff') {
+        setShowBluetoothOffModal(true);
+        setBluetoothReady(false);
+      } else if (currentState === 'PoweredOn') {
+        setBluetoothReady(true);
+        setShowBluetoothOffModal(false);
+      } else {
+        // For other states like Unknown, Unsupported, etc.
+        setBluetoothReady(false);
+      }
+
+      // Monitor Bluetooth state changes
+      bluetoothManager.current.monitorBluetoothState(state => {
+        setBluetoothStatus(state);
+
+        if (state === 'PoweredOff') {
+          setShowBluetoothOffModal(true);
+          setBluetoothReady(false);
+          stopScan();
+        } else if (state === 'PoweredOn') {
+          setBluetoothReady(true);
+          setShowBluetoothOffModal(false);
+        } else {
+          setBluetoothReady(false);
+        }
+      });
+
       setInitializing(false);
       return true;
     } catch (error) {
@@ -167,6 +202,10 @@ const BLEScanScreen = () => {
     return () => {
       stopScan();
       if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
+      // Clean up Bluetooth state monitoring
+      if (bluetoothManager.current) {
+        bluetoothManager.current.stopMonitoringBluetoothState();
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -290,6 +329,26 @@ const BLEScanScreen = () => {
       deviceId,
       deviceName: deviceName || 'BLE Device',
     });
+  };
+
+  const openBluetoothSettings = async () => {
+    try {
+      if (bluetoothManager.current) {
+        showToast(
+          'info',
+          'Opening Settings',
+          'Redirecting to Bluetooth settings...',
+        );
+        await bluetoothManager.current.openBluetoothSettings();
+      }
+    } catch (error) {
+      console.error('Error opening Bluetooth settings:', error);
+      showToast(
+        'error',
+        'Settings Error',
+        'Could not open Bluetooth settings. Please enable Bluetooth manually in your device Settings.',
+      );
+    }
   };
 
   // Static color
@@ -432,6 +491,54 @@ const BLEScanScreen = () => {
         startScan={startScan}
         stopScan={stopScan}
       />
+
+      {/* Bluetooth Off Modal */}
+      <Modal
+        visible={showBluetoothOffModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowBluetoothOffModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalIconContainer}>
+              <Icon name="bluetooth" size={60} color="#FF3B30" />
+              <View style={styles.modalWarningBadge}>
+                <Icon name="alert-circle" size={24} color="#FFFFFF" />
+              </View>
+            </View>
+
+            <Text style={styles.modalTitle}>Bluetooth is Off</Text>
+            <Text style={styles.modalMessage}>
+              Please enable Bluetooth to scan for and connect to BLE devices.
+              Tap the button below to open Bluetooth settings.
+            </Text>
+
+            <View style={styles.modalButtonContainer}>
+              <TouchableOpacity
+                style={styles.modalSettingsButton}
+                onPress={openBluetoothSettings}
+              >
+                <Icon name="settings" size={18} color="#FFFFFF" />
+                <Text style={styles.modalSettingsButtonText}>
+                  Open Bluetooth Settings
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.modalCancelButton}
+                onPress={() => setShowBluetoothOffModal(false)}
+              >
+                <Text style={styles.modalCancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalHint}>
+              You can also check Bluetooth status in your device settings.
+            </Text>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -669,6 +776,103 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#8E9AAB',
     textAlign: 'center',
+  },
+  // Bluetooth Off Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    paddingHorizontal: 24,
+    paddingVertical: 32,
+    marginHorizontal: 32,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  modalIconContainer: {
+    position: 'relative',
+    marginBottom: 20,
+  },
+  modalWarningBadge: {
+    position: 'absolute',
+    bottom: -8,
+    right: -8,
+    backgroundColor: '#FF3B30',
+    borderRadius: 16,
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#1A2B4C',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 14,
+    color: '#6B7A8F',
+    textAlign: 'center',
+    marginBottom: 28,
+    lineHeight: 21,
+  },
+  modalButtonContainer: {
+    width: '100%',
+    gap: 12,
+    marginBottom: 16,
+  },
+  modalSettingsButton: {
+    flexDirection: 'row',
+    backgroundColor: '#FF3B30',
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    shadowColor: '#FF3B30',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  modalSettingsButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalCancelButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: '#E8ECF0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F5F7FA',
+  },
+  modalCancelButtonText: {
+    color: '#6B7A8F',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  modalHint: {
+    fontSize: 12,
+    color: '#8E9AAB',
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
 });
 
