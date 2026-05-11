@@ -21,7 +21,7 @@ const CHUNK_LENGTH = 240;
 const SECTOR_SIZE = 8 * 1024;
 const BASE_ADDRESS = 0x080000;
 
-const OTATab = ({ characteristics }) => {
+const OTATab = ({ characteristics, onUploadingStateChange }) => {
   const navigation = useNavigation();
   const [fileContent, setFileContent] = useState([]);
   const [fileLength, setFileLength] = useState(0);
@@ -85,6 +85,7 @@ const OTATab = ({ characteristics }) => {
               if (indication === 0x02) {
                 console.log('[OTA] Device ready to receive file.');
                 setIsUploading(true);
+                if (onUploadingStateChange) onUploadingStateChange(true);
                 sliceAndSend();
               } else if (indication === 0x01) {
                 console.log('[OTA] Rebooting...');
@@ -93,6 +94,7 @@ const OTATab = ({ characteristics }) => {
                 console.error('[OTA] Error: Device not free to upload.');
                 showToast('error', 'Error', 'Device not ready for upload');
                 setIsUploading(false);
+                if (onUploadingStateChange) onUploadingStateChange(false);
               }
             }
           },
@@ -197,6 +199,7 @@ const OTATab = ({ characteristics }) => {
           `Error at ${Math.round((totalBytesSent / totalLength) * 100)}%`,
         );
         setIsUploading(false);
+        if (onUploadingStateChange) onUploadingStateChange(false);
         return;
       }
     }
@@ -224,6 +227,10 @@ const OTATab = ({ characteristics }) => {
         'Firmware upload completed! Device will reboot.',
       );
 
+      // Reset uploading state before navigation
+      setIsUploading(false);
+      if (onUploadingStateChange) onUploadingStateChange(false);
+
       // Navigate back to scanner page (EXACTLY like working version)
       navigation.navigate('BLEScan', {
         showSuccessToast: true,
@@ -232,6 +239,7 @@ const OTATab = ({ characteristics }) => {
       console.error('[OTA] Error sending end of file transfer:', error.message);
       showToast('error', 'Error', 'Failed to send end of file transfer.');
       setIsUploading(false);
+      if (onUploadingStateChange) onUploadingStateChange(false);
     }
   };
 

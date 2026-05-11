@@ -17,7 +17,12 @@ import { showToast } from '../utils/ShowToast';
 
 const { height: screenHeight } = Dimensions.get('window');
 
-const ConfigurationTab = ({ characteristics, configData, parsedConfig }) => {
+const ConfigurationTab = ({
+  characteristics,
+  configData,
+  parsedConfig,
+  onWritingStateChange,
+}) => {
   const [apn, setApn] = useState('');
   const [serverAddr, setServerAddr] = useState('');
   const [serverPort, setServerPort] = useState('');
@@ -206,6 +211,7 @@ const ConfigurationTab = ({ characteristics, configData, parsedConfig }) => {
     console.log('Writing Config Payload (Base64): ', base64Value);
 
     setIsWriting(true);
+    if (onWritingStateChange) onWritingStateChange(true);
     try {
       if (characteristic.writeWithoutResponse) {
         await characteristic.writeWithoutResponse(base64Value);
@@ -220,6 +226,7 @@ const ConfigurationTab = ({ characteristics, configData, parsedConfig }) => {
       showToast('error', 'Error', 'Failed to write configuration');
     } finally {
       setIsWriting(false);
+      if (onWritingStateChange) onWritingStateChange(false);
     }
   };
 

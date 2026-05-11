@@ -33,10 +33,22 @@ const DeviceDetailsScreen = () => {
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [showDisconnectModal, setShowDisconnectModal] = useState(false);
+  const [bluetoothStatus, setBluetoothStatus] = useState('PoweredOn');
+
+  // Track ongoing operations in tabs
+  const [isWritingConfig, setIsWritingConfig] = useState(false);
+  const [isUploadingOTA, setIsUploadingOTA] = useState(false);
+
+  // Refs to track state
+  const isManualDisconnectRef = useRef(false);
+  const bluetoothManagerRef = useRef(null);
+  const stateMonitorRef = useRef(null);
+  const isMountedRef = useRef(true);
 
   const handleDisconnect = async () => {
     if (isDisconnecting) return;
 
+    isManualDisconnectRef.current = true;
     setIsDisconnecting(true);
     setShowDisconnectModal(false);
 
@@ -44,13 +56,142 @@ const DeviceDetailsScreen = () => {
       await BluetoothManager.getInstance().disconnectDevice(deviceId);
       setIsConnected(false);
       showToast('info', 'Disconnected', `Disconnected from ${deviceName}`);
-      navigation.goBack();
+      if (isMountedRef.current) {
+        navigation.goBack();
+      }
     } catch (error) {
       showToast('error', 'Error', 'Failed to disconnect');
     } finally {
       setIsDisconnecting(false);
     }
   };
+
+  // Monitor Bluetooth state changes and unexpected disconnections
+  useEffect(() => {
+    isMountedRef.current = true;
+    bluetoothManagerRef.current = BluetoothManager.getInstance();
+
+    const setupBluetoothMonitoring = async () => {
+      if (!bluetoothManagerRef.current) return;
+
+      try {
+        // Check initial Bluetooth state
+        const initialState =
+          await bluetoothManagerRef.current.getBluetoothState();
+        if (isMountedRef.current) {
+          setBluetoothStatus(initialState);
+        }
+
+        // Monitor Bluetooth state changes
+        bluetoothManagerRef.current.monitorBluetoothState(state => {
+          if (isMountedRef.current) {
+            setBluetoothStatus(state);
+            console.log('[DeviceDetails] Bluetooth state changed to:', state);
+
+            // If Bluetooth is turned off while on device details page
+            if (
+              state === 'PoweredOff' &&
+              isConnected &&
+              !isManualDisconnectRef.current
+            ) {
+              console.log(
+                '[DeviceDetails] Bluetooth turned off - navigating back',
+              );
+
+              // Check for ongoing operations
+              const hasOngoingOperations = isWritingConfig || isUploadingOTA;
+
+              let message = 'Bluetooth has been disabled.';
+              let title = 'Bluetooth Off';
+
+              if (hasOngoingOperations) {
+                if (isWritingConfig) {
+                  title = 'Configuration Interrupted';
+                  message =
+                    'Bluetooth disabled during configuration update. Changes may not have been saved.';
+                } else if (isUploadingOTA) {
+                  title = 'OTA Update Interrupted';
+                  message =
+                    'Bluetooth disabled during firmware update. Update was interrupted and may need to be restarted.';
+                }
+              } else {
+                message += ' Returning to scan screen.';
+              }
+
+              showToast('warning', title, message);
+
+              // Reset ongoing operation states
+              setIsWritingConfig(false);
+              setIsUploadingOTA(false);
+
+              setTimeout(
+                () => {
+                  if (isMountedRef.current) {
+                    navigation.goBack();
+                  }
+                },
+                hasOngoingOperations ? 1500 : 500,
+              );
+            }
+          }
+        });
+      } catch (error) {
+        console.error(
+          '[DeviceDetails] Error setting up Bluetooth monitoring:',
+          error,
+        );
+      }
+    };
+
+    setupBluetoothMonitoring();
+
+    return () => {
+      isMountedRef.current = false;
+      if (bluetoothManagerRef.current) {
+        bluetoothManagerRef.current.stopMonitoringBluetoothState();
+      }
+    };
+  }, []);
+
+  // Handle unexpected device disconnection
+  useEffect(() => {
+    if (!isConnected && !isManualDisconnectRef.current && !isDisconnecting) {
+      console.log('[DeviceDetails] Device disconnected unexpectedly');
+
+      // Check if there are ongoing operations
+      const hasOngoingOperations = isWritingConfig || isUploadingOTA;
+
+      let message = `${deviceName} has disconnected unexpectedly.`;
+      let title = 'Device Disconnected';
+
+      if (hasOngoingOperations) {
+        if (isWritingConfig) {
+          title = 'Configuration Interrupted';
+          message = `${deviceName} disconnected during configuration update. Changes may not have been saved.`;
+        } else if (isUploadingOTA) {
+          title = 'OTA Update Interrupted';
+          message = `${deviceName} disconnected during firmware update. Update was interrupted and may need to be restarted.`;
+        }
+      } else {
+        message += ' Returning to scan screen.';
+      }
+
+      showToast('warning', title, message);
+
+      // Reset ongoing operation states
+      setIsWritingConfig(false);
+      setIsUploadingOTA(false);
+
+      setTimeout(
+        () => {
+          if (isMountedRef.current) {
+            navigation.goBack();
+          }
+        },
+        hasOngoingOperations ? 1500 : 800,
+      ); // Longer delay for operations
+    }
+  }, [isConnected, navigation, deviceName, isWritingConfig, isUploadingOTA]);
 
   const handleNotification = useCallback((value, type = 'ota') => {
     const timestamp = new Date();
@@ -150,6 +291,17 @@ const DeviceDetailsScreen = () => {
         );
       }
     }
+  }, []);
+
+  // Cleanup on component unmount
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+      isManualDisconnectRef.current = false;
+      if (bluetoothManagerRef.current) {
+        bluetoothManagerRef.current.stopMonitoringBluetoothState();
+      }
+    };
   }, []);
 
   const characteristics = useBluetoothCharacteristics(
@@ -326,9 +478,15 @@ const DeviceDetailsScreen = () => {
             characteristics={characteristics}
             configData={configData}
             parsedConfig={parsedConfig}
+            onWritingStateChange={setIsWritingConfig}
           />
         )}
-        {activeTab === 'ota' && <OTATab characteristics={characteristics} />}
+        {activeTab === 'ota' && (
+          <OTATab
+            characteristics={characteristics}
+            onUploadingStateChange={setIsUploadingOTA}
+          />
+        )}
       </ScrollView>
 
       <DisconnectModal />
