@@ -6,12 +6,15 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   ScrollView,
+  Platform,
 } from 'react-native';
 import DocumentPicker from 'react-native-document-picker';
 import RNFS from 'react-native-fs';
 import { Buffer } from 'buffer';
 import Icon from 'react-native-vector-icons/Ionicons';
-import MaterialIcon from 'react-native-vector-icons/MaterialCommunityIcons';
+import FontistoIcon from 'react-native-vector-icons/Fontisto';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import FontAwesome6Icon from 'react-native-vector-icons/FontAwesome6';
 import OctIcon from 'react-native-vector-icons/Octicons';
 import * as Progress from 'react-native-progress';
 import { showToast } from '../utils/ShowToast';
@@ -64,7 +67,7 @@ const OTATab = ({ characteristics, onUploadingStateChange }) => {
     writeWithoutResponseCharacteristic,
   ]);
 
-  // Monitor indication characteristic for device ready signal (EXACT MATCH to working version)
+  // Monitor indication characteristic for device ready signal
   useEffect(() => {
     if (!indicateCharacteristic || !otaSupported || !isConnected) {
       return;
@@ -231,7 +234,7 @@ const OTATab = ({ characteristics, onUploadingStateChange }) => {
       setIsUploading(false);
       if (onUploadingStateChange) onUploadingStateChange(false);
 
-      // Navigate back to scanner page (EXACTLY like working version)
+      // Navigate back to scanner page
       navigation.navigate('BLEScan', {
         showSuccessToast: true,
       });
@@ -296,7 +299,7 @@ const OTATab = ({ characteristics, onUploadingStateChange }) => {
       setFileName(selectedFileName);
       setFileSize(selectedFileSize);
 
-      // Read file content (EXACT MATCH to working version)
+      // Read file content
       const fileContentBase64 = await RNFS.readFile(fileUri, 'base64');
       const uint8View = Uint8Array.from(atob(fileContentBase64), c =>
         c.charCodeAt(0),
@@ -367,6 +370,22 @@ const OTATab = ({ characteristics, onUploadingStateChange }) => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  // Info Card Component
+  const InfoCard = () => (
+    <View style={styles.infoCard}>
+      <View style={styles.infoCardIconContainer}>
+        <MaterialCommunityIcons name="cloud-upload" size={28} color="#FFFFFF" />
+      </View>
+      <View style={styles.infoCardContent}>
+        <Text style={styles.infoTitle}>OTA Firmware Update</Text>
+        <Text style={styles.infoText}>
+          Update your device firmware over the air. Select a .bin file and start
+          the upload process.
+        </Text>
+      </View>
+    </View>
+  );
+
   // Show loading state while checking OTA support
   if (!characteristics || !isConnected) {
     return (
@@ -380,24 +399,32 @@ const OTATab = ({ characteristics, onUploadingStateChange }) => {
   // Show OTA not supported message
   if (!otaSupported && isConnected) {
     return (
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-        <View style={[styles.infoCard, { backgroundColor: '#FF9500' }]}>
-          <Icon name="alert-circle-outline" size={48} color="#FFFFFF" />
-          <Text style={styles.infoTitle}>OTA Not Supported</Text>
-          <Text style={styles.infoText}>
-            This device does not support OTA (Over-The-Air) updates. The
-            required BLE characteristics were not found.
-          </Text>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Missing:</Text>
-            <Text style={styles.infoValue}>
-              {!writeAddressCharacteristic &&
-              !writeWithoutResponseCharacteristic
-                ? 'OTA Service & Characteristics'
-                : !writeAddressCharacteristic
-                ? 'Base Address Characteristic (fe22)'
-                : 'Data Characteristic (fe24)'}
+      <ScrollView
+        style={styles.container}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.contentContainer}
+      >
+        <View style={[styles.infoCard, styles.warningCard]}>
+          <View style={styles.infoCardIconContainer}>
+            <Icon name="alert-circle-outline" size={28} color="#FFFFFF" />
+          </View>
+          <View style={styles.infoCardContent}>
+            <Text style={styles.infoTitle}>OTA Not Supported</Text>
+            <Text style={styles.infoText}>
+              This device does not support OTA (Over-The-Air) updates. The
+              required BLE characteristics were not found.
             </Text>
+            <View style={styles.missingInfoContainer}>
+              <Text style={styles.missingInfoLabel}>Missing:</Text>
+              <Text style={styles.missingInfoValue}>
+                {!writeAddressCharacteristic &&
+                !writeWithoutResponseCharacteristic
+                  ? 'OTA Service & Characteristics'
+                  : !writeAddressCharacteristic
+                  ? 'Base Address Characteristic (fe22)'
+                  : 'Data Characteristic (fe24)'}
+              </Text>
+            </View>
           </View>
         </View>
       </ScrollView>
@@ -405,136 +432,138 @@ const OTATab = ({ characteristics, onUploadingStateChange }) => {
   }
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      <View style={styles.infoCard}>
-        <Icon name="cloud-upload-outline" size={24} color="#FFFFFF" />
-        <Text style={styles.infoTitle}>OTA Firmware Update</Text>
-        <Text style={styles.infoText}>
-          Update your device firmware over the air. Select a .bin file and start
-          the upload process.
-        </Text>
-      </View>
+    <ScrollView
+      style={styles.container}
+      showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+      contentContainerStyle={styles.contentContainer}
+    >
+      <InfoCard />
 
-      {/* Combined Single Card Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Firmware Update</Text>
-
-        {/* File Selection */}
-        <TouchableOpacity
-          style={[styles.selectButton, isUploading && styles.disabledButton]}
-          onPress={handleFileChange}
-          disabled={isUploading}
-          activeOpacity={0.8}
-        >
-          <Icon name="document-outline" size={20} color="#FFFFFF" />
-          <Text style={styles.selectButtonText}>
-            Select Firmware File (.bin)
-          </Text>
-        </TouchableOpacity>
-
-        {fileName && (
-          <View style={styles.fileInfoContainer}>
-            <View style={styles.fileInfoHeader}>
-              <OctIcon name="file" size={20} color="#007AFF" />
-              <Text style={styles.fileInfoTitle}>File Details</Text>
-            </View>
-            <View style={styles.fileInfoRow}>
-              <Text style={styles.fileInfoLabel}>Name:</Text>
-              <Text style={styles.fileInfoValue} numberOfLines={1}>
-                {fileName}
-              </Text>
-            </View>
-            <View style={styles.fileInfoRow}>
-              <Text style={styles.fileInfoLabel}>Size:</Text>
-              <Text style={styles.fileInfoValue}>
-                {formatFileSize(fileSize)}
-              </Text>
-            </View>
-            <View style={styles.fileInfoRow}>
-              <Text style={styles.fileInfoLabel}>Sectors:</Text>
-              <Text style={styles.fileInfoValue}>{nbSector}</Text>
-            </View>
-            <View style={styles.fileInfoRow}>
-              <Text style={styles.fileInfoLabel}>Total Bytes:</Text>
-              <Text style={styles.fileInfoValue}>
-                {fileLength.toLocaleString()}
-              </Text>
-            </View>
-          </View>
-        )}
-
-        {fileName && !isUploading && (
+      {/* OTA Settings Card */}
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <MaterialCommunityIcons name="chip" size={20} color="#007AFF" />
+          <Text style={styles.cardTitle}>Firmware Update</Text>
+        </View>
+        <View style={styles.cardContent}>
+          {/* File Selection */}
           <TouchableOpacity
-            style={styles.uploadButton}
-            onPress={handleUpload}
+            style={[styles.selectButton, isUploading && styles.disabledButton]}
+            onPress={handleFileChange}
+            disabled={isUploading}
             activeOpacity={0.8}
           >
-            <MaterialIcon
-              name="rocket-launch-outline"
-              size={20}
-              color="#FFFFFF"
-            />
-            <Text style={styles.uploadButtonText}>Start Firmware Upload</Text>
-          </TouchableOpacity>
-        )}
-
-        {isUploading && (
-          <View style={styles.progressContainer}>
-            <Text style={styles.progressLabel}>Uploading firmware...</Text>
-            <View style={styles.progressBarWrapper}>
-              <Progress.Bar
-                progress={progress}
-                width={null}
-                height={8}
-                color="#007AFF"
-                unfilledColor="#E8ECF0"
-                borderWidth={0}
-                borderRadius={4}
-                style={styles.progressBar}
-              />
-              <Text style={styles.progressText}>{`${Math.round(
-                progress * 100,
-              )}%`}</Text>
-            </View>
-            {progress > 0 && (
-              <Text style={styles.progressDetail}>
-                Uploading {formatFileSize(fileSize)} firmware
-              </Text>
-            )}
-          </View>
-        )}
-
-        {/* Divider */}
-        <View style={styles.divider} />
-
-        {/* OTA Process Steps - Reduced Font Size */}
-        <Text style={styles.processTitle}>OTA Process</Text>
-        <View style={styles.stepsContainer}>
-          <View style={styles.stepItem}>
-            <View style={styles.stepNumber}>
-              <Text style={styles.stepNumberText}>1</Text>
-            </View>
-            <Text style={styles.stepText}>Select .bin firmware file</Text>
-          </View>
-          <View style={styles.stepItem}>
-            <View style={styles.stepNumber}>
-              <Text style={styles.stepNumberText}>2</Text>
-            </View>
-            <Text style={styles.stepText}>Device prepares for upload</Text>
-          </View>
-          <View style={styles.stepItem}>
-            <View style={styles.stepNumber}>
-              <Text style={styles.stepNumberText}>3</Text>
-            </View>
-            <Text style={styles.stepText}>Firmware uploaded in chunks</Text>
-          </View>
-          <View style={styles.stepItem}>
-            <View style={styles.stepNumber}>
-              <Text style={styles.stepNumberText}>4</Text>
-            </View>
-            <Text style={styles.stepText}>
-              Device reboots with new firmware
+            <Icon name="document-outline" size={20} color="#FFFFFF" />
+            <Text style={styles.selectButtonText}>
+              Select Firmware File (.bin)
             </Text>
+          </TouchableOpacity>
+
+          {fileName && (
+            <View style={styles.fileInfoContainer}>
+              <View style={styles.fileInfoHeader}>
+                <OctIcon name="file" size={20} color="#007AFF" />
+                <Text style={styles.fileInfoTitle}>File Details</Text>
+              </View>
+              <View style={styles.fileInfoRow}>
+                <Text style={styles.fileInfoLabel}>Name:</Text>
+                <Text style={styles.fileInfoValue} numberOfLines={1}>
+                  {fileName}
+                </Text>
+              </View>
+              <View style={styles.fileInfoRow}>
+                <Text style={styles.fileInfoLabel}>Size:</Text>
+                <Text style={styles.fileInfoValue}>
+                  {formatFileSize(fileSize)}
+                </Text>
+              </View>
+              <View style={styles.fileInfoRow}>
+                <Text style={styles.fileInfoLabel}>Sectors Required:</Text>
+                <Text style={styles.fileInfoValue}>{nbSector}</Text>
+              </View>
+              <View style={styles.fileInfoRow}>
+                <Text style={styles.fileInfoLabel}>Total Bytes:</Text>
+                <Text style={styles.fileInfoValue}>
+                  {fileLength.toLocaleString()}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {fileName && !isUploading && (
+            <TouchableOpacity
+              style={styles.writeButton}
+              onPress={handleUpload}
+              activeOpacity={0.8}
+            >
+              <FontAwesome6Icon name="rocket" size={20} color="#FFFFFF" />
+              <Text style={styles.writeButtonText}>Start Firmware Upload</Text>
+            </TouchableOpacity>
+          )}
+
+          {isUploading && (
+            <View style={styles.progressContainer}>
+              <Text style={styles.progressLabel}>Uploading firmware...</Text>
+              <View style={styles.progressBarWrapper}>
+                <Progress.Bar
+                  progress={progress}
+                  width={null}
+                  height={8}
+                  color="#007AFF"
+                  unfilledColor="#E8ECF0"
+                  borderWidth={0}
+                  borderRadius={4}
+                  style={styles.progressBar}
+                />
+                <Text style={styles.progressText}>{`${Math.round(
+                  progress * 100,
+                )}%`}</Text>
+              </View>
+              {progress > 0 && (
+                <Text style={styles.progressDetail}>
+                  Uploading {formatFileSize(fileSize)} firmware
+                </Text>
+              )}
+            </View>
+          )}
+        </View>
+      </View>
+
+      {/* Process Steps Card */}
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <FontistoIcon name="info" size={20} color="#007AFF" />
+          <Text style={styles.cardTitle}>OTA Process Steps</Text>
+        </View>
+        <View style={styles.cardContent}>
+          <View style={styles.stepsContainer}>
+            <View style={styles.stepItem}>
+              <View style={styles.stepNumber}>
+                <Text style={styles.stepNumberText}>1</Text>
+              </View>
+              <Text style={styles.stepText}>Select .bin firmware file</Text>
+            </View>
+            <View style={styles.stepItem}>
+              <View style={styles.stepNumber}>
+                <Text style={styles.stepNumberText}>2</Text>
+              </View>
+              <Text style={styles.stepText}>Device prepares for upload</Text>
+            </View>
+            <View style={styles.stepItem}>
+              <View style={styles.stepNumber}>
+                <Text style={styles.stepNumberText}>3</Text>
+              </View>
+              <Text style={styles.stepText}>Firmware uploaded in chunks</Text>
+            </View>
+            <View style={styles.stepItem}>
+              <View style={styles.stepNumber}>
+                <Text style={styles.stepNumberText}>4</Text>
+              </View>
+              <Text style={styles.stepText}>
+                Device reboots with new firmware
+              </Text>
+            </View>
           </View>
         </View>
       </View>
@@ -552,13 +581,16 @@ const OTATab = ({ characteristics, onUploadingStateChange }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#F8F9FC',
+  },
+  contentContainer: {
     padding: 16,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    backgroundColor: '#F8F9FC',
   },
   loadingText: {
     marginTop: 12,
@@ -567,55 +599,94 @@ const styles = StyleSheet.create({
   },
   infoCard: {
     backgroundColor: '#007AFF',
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 20,
     marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#007AFF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  warningCard: {
+    backgroundColor: '#FF9500',
+    shadowColor: '#FF9500',
+  },
+  infoCardIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  infoCardContent: {
+    flex: 1,
   },
   infoTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#FFFFFF',
-    marginTop: 8,
-    marginBottom: 8,
+    marginBottom: 4,
   },
   infoText: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#FFFFFF',
     opacity: 0.9,
     lineHeight: 18,
   },
-  infoRow: {
+  missingInfoContainer: {
     flexDirection: 'row',
-    marginTop: 6,
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.2)',
   },
-  infoLabel: {
+  missingInfoLabel: {
     fontSize: 12,
     color: '#FFFFFF',
-    opacity: 0.7,
-    width: 100,
+    opacity: 0.8,
+    marginRight: 8,
+    fontWeight: '600',
   },
-  infoValue: {
+  missingInfoValue: {
     fontSize: 12,
     color: '#FFFFFF',
-    fontFamily: 'monospace',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
     flex: 1,
   },
-  section: {
+  card: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 20,
+    borderRadius: 20,
     marginBottom: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 3,
+    overflow: 'hidden',
   },
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: '600',
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F2F5',
+    gap: 8,
+  },
+  cardTitle: {
+    fontSize: 15,
+    fontWeight: '700',
     color: '#1A2B4C',
-    marginBottom: 16,
+    letterSpacing: 0.3,
+  },
+  cardContent: {
+    padding: 20,
   },
   selectButton: {
     flexDirection: 'row',
@@ -624,19 +695,26 @@ const styles = StyleSheet.create({
     backgroundColor: '#007AFF',
     paddingVertical: 14,
     borderRadius: 12,
-    gap: 8,
-    marginBottom: 16,
+    gap: 10,
+    shadowColor: '#007AFF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
   selectButtonText: {
     color: '#FFFFFF',
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   fileInfoContainer: {
     backgroundColor: '#F8F9FC',
     borderRadius: 12,
     padding: 16,
+    marginTop: 16,
     marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#F0F2F5',
   },
   fileInfoHeader: {
     flexDirection: 'row',
@@ -648,7 +726,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#E8ECF0',
   },
   fileInfoTitle: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '600',
     color: '#1A2B4C',
   },
@@ -658,42 +736,49 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   fileInfoLabel: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#8E9AAB',
   },
   fileInfoValue: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#1A2B4C',
     fontWeight: '500',
     flex: 1,
     textAlign: 'right',
   },
-  uploadButton: {
+  writeButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#34C759',
     paddingVertical: 14,
     borderRadius: 12,
-    gap: 8,
+    gap: 10,
+    shadowColor: '#34C759',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  uploadButtonText: {
+  writeButtonText: {
     color: '#FFFFFF',
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   disabledButton: {
     opacity: 0.5,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   progressContainer: {
     marginTop: 16,
     paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: '#E8ECF0',
+    borderTopColor: '#F0F2F5',
   },
   progressLabel: {
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 13,
+    fontWeight: '600',
     color: '#1A2B4C',
     marginBottom: 12,
   },
@@ -708,26 +793,15 @@ const styles = StyleSheet.create({
   progressText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#007bff',
+    color: '#007AFF',
   },
   progressDetail: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#8E9AAB',
     marginTop: 8,
   },
-  divider: {
-    height: 1,
-    backgroundColor: '#E8ECF0',
-    marginVertical: 20,
-  },
-  processTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#1A2B4C',
-    marginBottom: 12,
-  },
   stepsContainer: {
-    gap: 10,
+    gap: 12,
   },
   stepItem: {
     flexDirection: 'row',
@@ -735,17 +809,19 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   stepNumber: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#238dffaf',
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#007AFF15',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#007AFF30',
   },
   stepNumberText: {
-    color: '#FFFFFF',
+    color: '#007AFF',
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   stepText: {
     fontSize: 13,
@@ -755,11 +831,16 @@ const styles = StyleSheet.create({
   footerInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8F9FC',
-    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     padding: 16,
     marginBottom: 24,
     gap: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
   },
   footerText: {
     flex: 1,

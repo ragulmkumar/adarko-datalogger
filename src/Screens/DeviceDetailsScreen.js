@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useBluetoothCharacteristics } from '../utils/useBluetoothCharacteristics';
 import OTATab from '../Components/OTATab';
 import ConfigurationTab from '../Components/ConfigurationTab';
@@ -455,8 +456,8 @@ const DeviceDetailsScreen = () => {
             ]}
             onPress={() => setActiveTab('configuration')}
           >
-            <Icon
-              name="settings-outline"
+            <MaterialCommunityIcons
+              name="database-cog"
               size={20}
               color={activeTab === 'configuration' ? '#007AFF' : '#8E9AAB'}
             />
@@ -474,8 +475,8 @@ const DeviceDetailsScreen = () => {
             style={[styles.tab, activeTab === 'ota' && styles.activeTab]}
             onPress={() => setActiveTab('ota')}
           >
-            <Icon
-              name="cloud-upload-outline"
+            <MaterialCommunityIcons
+              name="cloud-upload"
               size={20}
               color={activeTab === 'ota' ? '#007AFF' : '#8E9AAB'}
             />

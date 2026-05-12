@@ -12,6 +12,8 @@ import {
   Dimensions,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import FontAwesomIcon from 'react-native-vector-icons/FontAwesome6';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import UserConfig from '../utils/ParseConfig';
 import { showToast } from '../utils/ShowToast';
 
@@ -223,85 +225,99 @@ const ConfigurationTab = ({
     }
   };
 
-  // Read-only property row component
-  const ReadOnlyRow = ({ icon, label, value, valueColor, iconColor }) => (
-    <View style={styles.readOnlyRow}>
-      <View style={styles.rowLeft}>
-        <Icon name={icon} size={20} color={iconColor || '#8E9AAB'} />
-        <Text style={styles.rowLabel}>{label}</Text>
+  // Info Card Component
+  const InfoCard = () => (
+    <View style={styles.infoCard}>
+      <View style={styles.infoCardIconContainer}>
+        <MaterialCommunityIcons name="database-cog" size={28} color="#FFFFFF" />
       </View>
-      <View style={styles.rowRight}>
-        <Text style={[styles.rowValue, valueColor && { color: valueColor }]}>
-          {value || '---'}
-        </Text>
-      </View>
-    </View>
-  );
-
-  return (
-    <ScrollView
-      style={styles.container}
-      showsVerticalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled"
-      ref={scrollViewRef}
-    >
-      <View style={styles.infoCard}>
-        <Icon name="settings-outline" size={24} color="#FFFFFF" />
+      <View style={styles.infoCardContent}>
         <Text style={styles.infoTitle}>Device Configuration</Text>
         <Text style={styles.infoText}>
           Edit the configuration parameters below and click Write to save to
           device
         </Text>
       </View>
+    </View>
+  );
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Device Information</Text>
+  // Read-only property row component - optimized for EUI-64 display
+  const ReadOnlyRow = ({ icon, label, value, unit, isEUI }) => (
+    <View style={styles.readOnlyRow}>
+      <View style={styles.rowLeft}>
+        <View style={[styles.iconWrapper, { backgroundColor: '#007AFF15' }]}>
+          <Icon name={icon} size={15} color="#007AFF" />
+        </View>
+        <Text style={styles.rowLabel}>{label}</Text>
+      </View>
+      <View style={[styles.rowRight, isEUI && styles.rowRightEUI]}>
+        <Text
+          style={[styles.rowValue, isEUI && styles.rowValueEUI]}
+          numberOfLines={isEUI ? 2 : 1}
+        >
+          {value || '---'}
+          {unit && value && <Text style={styles.unitText}> {unit}</Text>}
+        </Text>
+      </View>
+    </View>
+  );
 
-        {/* Read-only fields in property list format */}
+  // Device Information Card Component
+  const DeviceInfoCard = () => (
+    <View style={styles.card}>
+      <View style={styles.cardHeader}>
+        <MaterialCommunityIcons
+          name="database-check"
+          size={20}
+          color="#007AFF"
+        />
+        <Text style={styles.cardTitle}>Device Information</Text>
+      </View>
+      <View style={styles.cardContent}>
         <ReadOnlyRow
           icon="hardware-chip-outline"
           label="EUI-64"
           value={eui64}
-          iconColor="#007AFF"
+          isEUI={true}
         />
-
         <ReadOnlyRow
           icon="battery-full-outline"
           label="Battery Voltage"
-          value={batteryVoltage ? `${batteryVoltage} V` : '---'}
-          valueColor="#34C759"
-          iconColor="#34C759"
+          value={batteryVoltage}
+          unit="V"
         />
-
         <ReadOnlyRow
           icon="thermometer-outline"
           label="Temperature"
-          value={temperature ? `${temperature} °C` : '---'}
-          valueColor="#FF3B30"
-          iconColor="#FF3B30"
+          value={temperature}
+          unit="°C"
         />
-
         <ReadOnlyRow
-          icon="code-outline"
+          icon="code-slash-outline"
           label="Firmware Version"
           value={fwVersion}
-          valueColor="#007AFF"
-          iconColor="#007AFF"
         />
-
         <ReadOnlyRow
           icon="build-outline"
           label="Hardware Version"
           value={hwVersion}
-          valueColor="#007AFF"
-          iconColor="#007AFF"
         />
+      </View>
+    </View>
+  );
 
-        <View style={styles.divider} />
-
-        <Text style={styles.sectionTitle}>Configuration Settings</Text>
-
-        {/* Editable Fields */}
+  // Configuration Settings Card Component
+  const ConfigSettingsCard = () => (
+    <View style={styles.card}>
+      <View style={styles.cardHeader}>
+        <MaterialCommunityIcons
+          name="database-edit"
+          size={20}
+          color="#007AFF"
+        />
+        <Text style={styles.cardTitle}>Configuration Settings</Text>
+      </View>
+      <View style={styles.cardContent}>
         <View style={styles.inputGroup}>
           <Text style={styles.label}>APN</Text>
           <TextInput
@@ -377,12 +393,26 @@ const ConfigurationTab = ({
             <ActivityIndicator color="#FFFFFF" />
           ) : (
             <>
-              <Icon name="save-outline" size={18} color="#FFFFFF" />
+              <FontAwesomIcon name="file-pen" size={20} color="#FFFFFF" />
               <Text style={styles.writeButtonText}>Write Configuration</Text>
             </>
           )}
         </TouchableOpacity>
       </View>
+    </View>
+  );
+
+  return (
+    <ScrollView
+      style={styles.container}
+      showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+      ref={scrollViewRef}
+      contentContainerStyle={styles.contentContainer}
+    >
+      <InfoCard />
+      <DeviceInfoCard />
+      <ConfigSettingsCard />
 
       <View style={styles.footerInfo}>
         <Icon name="information-circle-outline" size={20} color="#8E9AAB" />
@@ -441,7 +471,7 @@ const ConfigurationTab = ({
                     {option.label}
                   </Text>
                   {sendIntervalMins === option.label && (
-                    <Icon name="checkmark" size={16} color="#007AFF" />
+                    <Icon name="checkmark-circle" size={18} color="#007AFF" />
                   )}
                 </TouchableOpacity>
               ))}
@@ -456,97 +486,149 @@ const ConfigurationTab = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#F8F9FC',
+  },
+  contentContainer: {
     padding: 16,
   },
   infoCard: {
     backgroundColor: '#007AFF',
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 20,
     marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#007AFF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  infoCardIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  infoCardContent: {
+    flex: 1,
   },
   infoTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#FFFFFF',
-    marginTop: 8,
-    marginBottom: 8,
+    marginBottom: 4,
   },
   infoText: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#FFFFFF',
     opacity: 0.9,
     lineHeight: 18,
   },
-  section: {
+  card: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 20,
+    borderRadius: 20,
     marginBottom: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 3,
+    overflow: 'hidden',
   },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F2F5',
+    gap: 8,
+  },
+  cardTitle: {
+    fontSize: 15,
+    fontWeight: '700',
     color: '#1A2B4C',
-    marginBottom: 16,
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
+  },
+  cardContent: {
+    padding: 20,
   },
   readOnlyRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#F0F2F5',
   },
   rowLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    flex: 1, // Reduced from 2 to 1 to give more space to value
+  },
+  iconWrapper: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
   rowLabel: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#5A6B7D',
     fontWeight: '500',
+    flexShrink: 1, // Allow label to shrink if needed
   },
   rowRight: {
-    flex: 1,
+    flex: 1, // Increased from 1 to 2 to give more space to value
     alignItems: 'flex-end',
   },
+  rowRightEUI: {
+    flex: 3, // Even more space for EUI-64 value
+  },
   rowValue: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
     color: '#1A2B4C',
     textAlign: 'right',
   },
-  divider: {
-    height: 1,
-    backgroundColor: '#E8ECF0',
-    marginVertical: 20,
+  rowValueEUI: {
+    fontSize: 12,
+    fontWeight: '500',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    lineHeight: 18,
+  },
+  unitText: {
+    fontSize: 12,
+    fontWeight: '400',
+    color: '#8E9AAB',
   },
   inputGroup: {
-    marginBottom: 16,
+    marginBottom: 20,
   },
   label: {
     fontSize: 13,
     fontWeight: '600',
     color: '#1A2B4C',
-    marginBottom: 6,
     letterSpacing: 0.3,
+    marginBottom: 8,
   },
   input: {
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: '#E2E6EA',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     fontSize: 14,
     color: '#1A2B4C',
     backgroundColor: '#FFFFFF',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
   },
   row: {
     flexDirection: 'row',
@@ -556,11 +638,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: '#E2E6EA',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     backgroundColor: '#FFFFFF',
   },
   dropdownText: {
@@ -573,7 +655,7 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'transparent',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
   },
   dropdownList: {
     backgroundColor: '#FFFFFF',
@@ -582,9 +664,9 @@ const styles = StyleSheet.create({
     borderColor: '#E2E6EA',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
     zIndex: 1000,
     maxHeight: 250,
   },
@@ -612,34 +694,46 @@ const styles = StyleSheet.create({
   },
   selectedDropdownItemText: {
     color: '#007AFF',
-    fontWeight: '500',
+    fontWeight: '600',
   },
   writeButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#007AFF',
-    paddingVertical: 12,
-    borderRadius: 10,
-    marginTop: 8,
-    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
+    marginTop: 12,
+    gap: 10,
+    shadowColor: '#007AFF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
   disabledButton: {
     backgroundColor: '#C8D0DC',
+    shadowOpacity: 0,
+    elevation: 0,
   },
   writeButtonText: {
     color: '#FFFFFF',
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   footerInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8F9FC',
-    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     padding: 16,
     marginBottom: 24,
     gap: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
   },
   footerText: {
     flex: 1,
