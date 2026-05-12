@@ -138,8 +138,9 @@ class BluetoothManager {
 
     try {
       console.log('Connecting to device:', deviceId);
-      const device = await this.manager.connectToDevice(deviceId);
-      await device.discoverAllServicesAndCharacteristics();
+      const device = await this.manager.connectToDevice(deviceId, {
+        autoConnect: false,
+      });
 
       device.onDisconnected(error => {
         console.log('Device disconnected:', deviceId, error);

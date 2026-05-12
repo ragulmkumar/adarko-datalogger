@@ -27,6 +27,8 @@ const ConfigurationTab = ({
   const [serverAddr, setServerAddr] = useState('');
   const [serverPort, setServerPort] = useState('');
   const [sendIntervalMins, setSendIntervalMins] = useState('');
+  const [batteryVoltage, setBatteryVoltage] = useState('');
+  const [temperature, setTemperature] = useState('');
   const [eui64, setEui64] = useState('');
   const [fwVersion, setFwVersion] = useState('');
   const [hwVersion, setHwVersion] = useState('');
@@ -40,7 +42,6 @@ const ConfigurationTab = ({
   const dropdownButtonRef = useRef(null);
   const scrollViewRef = useRef(null);
 
-  // Dropdown options: value in hours, label for display
   const intervalOptions = [
     { label: '1 Hour', value: 1, minutes: 60 },
     { label: '6 Hours', value: 6, minutes: 360 },
@@ -58,6 +59,8 @@ const ConfigurationTab = ({
       setEui64('');
       setFwVersion('');
       setHwVersion('');
+      setBatteryVoltage('');
+      setTemperature('');
       return;
     }
 
@@ -65,7 +68,6 @@ const ConfigurationTab = ({
     setServerAddr(parsedConfig.server_addr || '');
     setServerPort(parsedConfig.server_port?.toString() || '');
 
-    // Convert minutes to hours for display
     const mins = parsedConfig.send_interval_mins;
     const option = intervalOptions.find(opt => opt.minutes === mins);
     if (option) {
@@ -78,36 +80,28 @@ const ConfigurationTab = ({
       parsedConfig.eui64 ? UserConfig.formatHexArray(parsedConfig.eui64) : '',
     );
 
-    // Format firmware version - Using BCD format (02.00, 00.01, etc.)
+    const voltageValue = parsedConfig.decodeBatteryVoltage();
+    const tempValue = parsedConfig.decodeTemperature();
+
+    setBatteryVoltage(voltageValue ? voltageValue : '');
+    setTemperature(tempValue ? tempValue : '');
+
     if (
       parsedConfig.fw_version !== undefined &&
       parsedConfig.fw_version !== 0
     ) {
       const versionBCD = UserConfig.formatVersionBCD(parsedConfig.fw_version);
       setFwVersion(versionBCD);
-      console.log(
-        `Firmware Version BCD: ${versionBCD} (0x${parsedConfig.fw_version
-          .toString(16)
-          .toUpperCase()
-          .padStart(4, '0')})`,
-      );
     } else {
       setFwVersion('00.00');
     }
 
-    // Format hardware version - Using BCD format (02.00, 00.01, etc.)
     if (
       parsedConfig.hw_version !== undefined &&
       parsedConfig.hw_version !== 0
     ) {
       const versionBCD = UserConfig.formatVersionBCD(parsedConfig.hw_version);
       setHwVersion(versionBCD);
-      console.log(
-        `Hardware Version BCD: ${versionBCD} (0x${parsedConfig.hw_version
-          .toString(16)
-          .toUpperCase()
-          .padStart(4, '0')})`,
-      );
     } else {
       setHwVersion('00.00');
     }
@@ -177,7 +171,6 @@ const ConfigurationTab = ({
       return;
     }
 
-    // Get minutes from selected option
     const selectedOption = intervalOptions.find(
       opt => opt.label === sendIntervalMins,
     );
@@ -201,14 +194,14 @@ const ConfigurationTab = ({
     config.send_interval_mins = interval;
     config.eui64 = parsedConfig.eui64 || new Uint8Array(8);
     config.ble_addr = parsedConfig.ble_addr || new Uint8Array(6);
-    config.fw_version = parsedConfig.fw_version || 0; // Preserve read from device
-    config.hw_version = parsedConfig.hw_version || 0; // Preserve read from device
+    config.fw_version = parsedConfig.fw_version || 0;
+    config.hw_version = parsedConfig.hw_version || 0;
+    config.u8Vref_V = parsedConfig.u8Vref_V || 0;
+    config.u8Temp_C = parsedConfig.u8Temp_C || 0;
 
     const hex = config.toHex();
     const bytes = UserConfig.hexToBytes(hex);
     const base64Value = bytesToBase64(bytes);
-
-    console.log('Writing Config Payload (Base64): ', base64Value);
 
     setIsWriting(true);
     if (onWritingStateChange) onWritingStateChange(true);
@@ -230,6 +223,21 @@ const ConfigurationTab = ({
     }
   };
 
+  // Read-only property row component
+  const ReadOnlyRow = ({ icon, label, value, valueColor, iconColor }) => (
+    <View style={styles.readOnlyRow}>
+      <View style={styles.rowLeft}>
+        <Icon name={icon} size={20} color={iconColor || '#8E9AAB'} />
+        <Text style={styles.rowLabel}>{label}</Text>
+      </View>
+      <View style={styles.rowRight}>
+        <Text style={[styles.rowValue, valueColor && { color: valueColor }]}>
+          {value || '---'}
+        </Text>
+      </View>
+    </View>
+  );
+
   return (
     <ScrollView
       style={styles.container}
@@ -247,49 +255,53 @@ const ConfigurationTab = ({
       </View>
 
       <View style={styles.section}>
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>
-            EUI-64 <Text style={styles.readOnlyBadge}>(Read-Only)</Text>
-          </Text>
-          <View style={[styles.input, styles.disabledInput]}>
-            <Text style={styles.disabledInputText}>
-              {eui64 || 'Waiting for config...'}
-            </Text>
-          </View>
-        </View>
+        <Text style={styles.sectionTitle}>Device Information</Text>
 
-        <View style={styles.infoRow}>
-          <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
-            <Text style={styles.label}>
-              Firmware Version{' '}
-              <Text style={styles.readOnlyBadge}>(Read-Only)</Text>
-            </Text>
-            <View
-              style={[styles.input, styles.disabledInput, styles.versionInput]}
-            >
-              <Icon name="hardware-chip-outline" size={16} color="#007AFF" />
-              <Text style={[styles.disabledInputText, styles.versionText]}>
-                {fwVersion}
-              </Text>
-            </View>
-          </View>
+        {/* Read-only fields in property list format */}
+        <ReadOnlyRow
+          icon="hardware-chip-outline"
+          label="EUI-64"
+          value={eui64}
+          iconColor="#007AFF"
+        />
 
-          <View style={[styles.inputGroup, { flex: 1, marginLeft: 8 }]}>
-            <Text style={styles.label}>
-              Hardware Version{' '}
-              <Text style={styles.readOnlyBadge}>(Read-Only)</Text>
-            </Text>
-            <View
-              style={[styles.input, styles.disabledInput, styles.versionInput]}
-            >
-              <Icon name="build-outline" size={16} color="#007AFF" />
-              <Text style={[styles.disabledInputText, styles.versionText]}>
-                {hwVersion}
-              </Text>
-            </View>
-          </View>
-        </View>
+        <ReadOnlyRow
+          icon="battery-full-outline"
+          label="Battery Voltage"
+          value={batteryVoltage ? `${batteryVoltage} V` : '---'}
+          valueColor="#34C759"
+          iconColor="#34C759"
+        />
 
+        <ReadOnlyRow
+          icon="thermometer-outline"
+          label="Temperature"
+          value={temperature ? `${temperature} °C` : '---'}
+          valueColor="#FF3B30"
+          iconColor="#FF3B30"
+        />
+
+        <ReadOnlyRow
+          icon="code-outline"
+          label="Firmware Version"
+          value={fwVersion}
+          valueColor="#007AFF"
+          iconColor="#007AFF"
+        />
+
+        <ReadOnlyRow
+          icon="build-outline"
+          label="Hardware Version"
+          value={hwVersion}
+          valueColor="#007AFF"
+          iconColor="#007AFF"
+        />
+
+        <View style={styles.divider} />
+
+        <Text style={styles.sectionTitle}>Configuration Settings</Text>
+
+        {/* Editable Fields */}
         <View style={styles.inputGroup}>
           <Text style={styles.label}>APN</Text>
           <TextInput
@@ -379,7 +391,7 @@ const ConfigurationTab = ({
         </Text>
       </View>
 
-      {/* Modal-based dropdown for better positioning */}
+      {/* Dropdown Modal */}
       <Modal
         visible={showDropdown}
         transparent={true}
@@ -476,53 +488,65 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
   },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1A2B4C',
+    marginBottom: 16,
+    letterSpacing: 0.5,
+  },
+  readOnlyRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F2F5',
+  },
+  rowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  rowLabel: {
+    fontSize: 14,
+    color: '#5A6B7D',
+    fontWeight: '500',
+  },
+  rowRight: {
+    flex: 1,
+    alignItems: 'flex-end',
+  },
+  rowValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1A2B4C',
+    textAlign: 'right',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#E8ECF0',
+    marginVertical: 20,
+  },
   inputGroup: {
     marginBottom: 16,
   },
   label: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: '#1A2B4C',
-    marginBottom: 8,
+    marginBottom: 6,
     letterSpacing: 0.3,
-  },
-  readOnlyBadge: {
-    fontSize: 12,
-    fontWeight: '400',
-    color: '#8E9AAB',
   },
   input: {
     borderWidth: 1,
     borderColor: '#E2E6EA',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     fontSize: 14,
     color: '#1A2B4C',
     backgroundColor: '#FFFFFF',
-  },
-  disabledInput: {
-    backgroundColor: '#F8F9FC',
-    borderColor: '#E2E6EA',
-  },
-  disabledInputText: {
-    fontSize: 14,
-    color: '#8E9AAB',
-  },
-  versionText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#007AFF',
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-  },
-  versionInput: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    marginBottom: 16,
   },
   row: {
     flexDirection: 'row',
@@ -534,9 +558,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     borderWidth: 1,
     borderColor: '#E2E6EA',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     backgroundColor: '#FFFFFF',
   },
   dropdownText: {
@@ -595,8 +619,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#007AFF',
-    paddingVertical: 14,
-    borderRadius: 12,
+    paddingVertical: 12,
+    borderRadius: 10,
     marginTop: 8,
     gap: 8,
   },

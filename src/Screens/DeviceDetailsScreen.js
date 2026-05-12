@@ -32,6 +32,7 @@ const DeviceDetailsScreen = () => {
   const [parsedConfig, setParsedConfig] = useState(null);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  const [hasConnectedOnce, setHasConnectedOnce] = useState(false);
   const [showDisconnectModal, setShowDisconnectModal] = useState(false);
   const [bluetoothStatus, setBluetoothStatus] = useState('PoweredOn');
 
@@ -155,7 +156,12 @@ const DeviceDetailsScreen = () => {
 
   // Handle unexpected device disconnection
   useEffect(() => {
-    if (!isConnected && !isManualDisconnectRef.current && !isDisconnecting) {
+    if (
+      hasConnectedOnce &&
+      !isConnected &&
+      !isManualDisconnectRef.current &&
+      !isDisconnecting
+    ) {
       console.log('[DeviceDetails] Device disconnected unexpectedly');
 
       // Check if there are ongoing operations
@@ -191,7 +197,14 @@ const DeviceDetailsScreen = () => {
         hasOngoingOperations ? 1500 : 800,
       ); // Longer delay for operations
     }
-  }, [isConnected, navigation, deviceName, isWritingConfig, isUploadingOTA]);
+  }, [
+    hasConnectedOnce,
+    isConnected,
+    navigation,
+    deviceName,
+    isWritingConfig,
+    isUploadingOTA,
+  ]);
 
   const handleNotification = useCallback((value, type = 'ota') => {
     const timestamp = new Date();
@@ -260,8 +273,8 @@ const DeviceDetailsScreen = () => {
         return newData.slice(0, 50);
       });
 
-      // Check for 123 bytes (updated size including version fields)
-      if (bytes.length === 123) {
+      // FIXED: Check for 125 bytes (not 123)
+      if (bytes.length === 125) {
         try {
           const hexString = hexDisplay.replace(/ /g, '');
           const config = UserConfig.fromHex(hexString);
@@ -287,7 +300,7 @@ const DeviceDetailsScreen = () => {
         }
       } else {
         console.log(
-          `Expected 123 bytes, got ${bytes.length} bytes. Waiting for full config packet.`,
+          `Expected 125 bytes, got ${bytes.length} bytes. Waiting for full config packet.`,
         );
       }
     }
@@ -303,6 +316,12 @@ const DeviceDetailsScreen = () => {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (isConnected) {
+      setHasConnectedOnce(true);
+    }
+  }, [isConnected]);
 
   const characteristics = useBluetoothCharacteristics(
     deviceId,

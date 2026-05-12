@@ -1,16 +1,15 @@
-const USER_CONFIG_SIZE = 123; // Updated from 119 to 123 bytes
+const USER_CONFIG_SIZE = 125;
 
 class UserConfig {
   constructor() {
     this.frame_head = 0;
-
     this.apn = '';
     this.server_addr = '';
-
     this.server_port = 0;
     this.modbus_slave_id = 0;
     this.send_interval_mins = 0;
-
+    this.u8Vref_V = 0; // Encoded battery voltage
+    this.u8Temp_C = 0; // Encoded temperature
     this.eui64 = new Uint8Array(8);
     this.ble_addr = new Uint8Array(6);
     this.fw_version = 0;
@@ -18,11 +17,46 @@ class UserConfig {
   }
 
   // =========================================================
-  // Convert CONFIG -> HEX
+  // Helper: Decode battery voltage from encoded value
+  // Formula: (val + 200) * 10 mV = (val + 200) / 100 V
+  // =========================================================
+  decodeBatteryVoltage() {
+    if (this.u8Vref_V === undefined || this.u8Vref_V === null) return null;
+    const voltage = (this.u8Vref_V + 200) / 100;
+    return voltage.toFixed(2);
+  }
+
+  // =========================================================
+  // Helper: Decode temperature from encoded value
+  // Formula: val - 40 °C
+  // =========================================================
+  decodeTemperature() {
+    if (this.u8Temp_C === undefined || this.u8Temp_C === null) return null;
+    const temp = this.u8Temp_C - 40;
+    return temp.toString();
+  }
+
+  // =========================================================
+  // Helper: Get formatted battery voltage string
+  // =========================================================
+  getFormattedBatteryVoltage() {
+    const voltage = this.decodeBatteryVoltage();
+    return voltage ? `${voltage} V` : 'N/A';
+  }
+
+  // =========================================================
+  // Helper: Get formatted temperature string
+  // =========================================================
+  getFormattedTemperature() {
+    const temp = this.decodeTemperature();
+    return temp ? `${temp} °C` : 'N/A';
+  }
+
+  // =========================================================
+  // Convert CONFIG -> HEX (FIXED ORDER)
   // =========================================================
   toHex() {
     const buffer = new ArrayBuffer(USER_CONFIG_SIZE);
-
     const view = new DataView(buffer);
     const bytes = new Uint8Array(buffer);
 
@@ -52,6 +86,14 @@ class UserConfig {
     view.setUint32(offset, this.send_interval_mins, true);
     offset += 4;
 
+    // uint8_t u8Vref_V (FIXED: moved before eui64)
+    view.setUint8(offset, this.u8Vref_V);
+    offset += 1;
+
+    // uint8_t u8Temp_C (FIXED: moved before eui64)
+    view.setUint8(offset, this.u8Temp_C);
+    offset += 1;
+
     // uint8_t eui64[8]
     bytes.set(this.eui64, offset);
     offset += 8;
@@ -72,7 +114,7 @@ class UserConfig {
   }
 
   // =========================================================
-  // Convert HEX -> CONFIG
+  // Convert HEX -> CONFIG (FIXED ORDER)
   // =========================================================
   static fromHex(hexString) {
     const bytes = UserConfig.hexToBytes(hexString);
@@ -84,7 +126,6 @@ class UserConfig {
     }
 
     const view = new DataView(bytes.buffer);
-
     const cfg = new UserConfig();
 
     let offset = 0;
@@ -113,6 +154,14 @@ class UserConfig {
     cfg.send_interval_mins = view.getUint32(offset, true);
     offset += 4;
 
+    // uint8_t u8Vref_V (FIXED: moved before eui64)
+    cfg.u8Vref_V = view.getUint8(offset);
+    offset += 1;
+
+    // uint8_t u8Temp_C (FIXED: moved before eui64)
+    cfg.u8Temp_C = view.getUint8(offset);
+    offset += 1;
+
     // uint8_t eui64[8]
     cfg.eui64 = bytes.slice(offset, offset + 8);
     offset += 8;
@@ -129,6 +178,14 @@ class UserConfig {
     cfg.hw_version = view.getUint16(offset, true);
     offset += 2;
 
+    // Log decoded values for debugging
+    console.log('=== Decoded Sensor Values ===');
+    console.log(`Raw u8Vref_V: ${cfg.u8Vref_V}`);
+    console.log(`Decoded Battery Voltage: ${cfg.getFormattedBatteryVoltage()}`);
+    console.log(`Raw u8Temp_C: ${cfg.u8Temp_C}`);
+    console.log(`Decoded Temperature: ${cfg.getFormattedTemperature()}`);
+    console.log('=============================');
+
     return cfg;
   }
 
@@ -138,11 +195,9 @@ class UserConfig {
   static formatVersionBCD(version) {
     if (!version || version === 0) return '00.00';
 
-    // Extract high and low bytes
     const highByte = (version >> 8) & 0xff;
     const lowByte = version & 0xff;
 
-    // Convert BCD to decimal string for display
     const highPart = ((highByte >> 4) * 10 + (highByte & 0x0f))
       .toString()
       .padStart(2, '0');
@@ -167,7 +222,6 @@ class UserConfig {
 
     if (isNaN(highPart) || isNaN(lowPart)) return 0;
 
-    // Convert decimal to BCD
     const highByte = ((Math.floor(highPart / 10) << 4) | highPart % 10) & 0xff;
     const lowByte = ((Math.floor(lowPart / 10) << 4) | lowPart % 10) & 0xff;
 
@@ -183,7 +237,7 @@ class UserConfig {
   }
 
   // =========================================================
-  // Helper to format version for display (kept for backward compatibility)
+  // Helper to format version for display
   // =========================================================
   static formatVersion(version) {
     return UserConfig.formatVersionBCD(version);
@@ -261,6 +315,18 @@ class UserConfig {
     console.log('server_port        :', this.server_port);
     console.log('modbus_slave_id    :', this.modbus_slave_id);
     console.log('send_interval_mins :', this.send_interval_mins);
+    console.log('───────────────────────────────────────');
+    console.log(
+      'battery_voltage    :',
+      this.getFormattedBatteryVoltage(),
+      `(raw: ${this.u8Vref_V})`,
+    );
+    console.log(
+      'temperature        :',
+      this.getFormattedTemperature(),
+      `(raw: ${this.u8Temp_C})`,
+    );
+    console.log('───────────────────────────────────────');
     console.log('eui64              :', UserConfig.formatHexArray(this.eui64));
     console.log(
       'ble_addr           :',
@@ -294,6 +360,8 @@ class UserConfig {
         this.hw_version,
       )} (${UserConfig.formatVersionHex(this.hw_version)})`,
     );
+    console.log(`🔋 Battery Voltage: ${this.getFormattedBatteryVoltage()}`);
+    console.log(`🌡️  Temperature: ${this.getFormattedTemperature()}`);
     console.log(`🆔 Device EUI-64: ${UserConfig.formatHexArray(this.eui64)}`);
     console.log(`📡 BLE Address: ${UserConfig.formatHexArray(this.ble_addr)}`);
     console.log('═══════════════════════════════════════');
